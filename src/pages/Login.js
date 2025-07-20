@@ -20,7 +20,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_BASE_API_URL}/auth/login`, {
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/auth/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -28,17 +28,24 @@ export default function LoginPage() {
         body: JSON.stringify(formData),
       });
 
-      const data = await res.json();
+      const data = await res.json(); // { token: ..., user: { _id: "xxxx", ... } }
 
       if (!res.ok) {
         throw new Error(data.message || "Failed to login");
       }
+     
 
-      // Assuming the backend sends a token upon successful login
-      // You would typically save this token (e.g., in localStorage)
+      const { token, user } = data; // Destructure token and user from data
+
+      // Fix the key: use _id instead of id
+      const fixedUser = { _id: user.id, username: user.username };
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(fixedUser));
+
       console.log("Login successful:", data);
       setLoading(false);
-      navigate("/"); // Navigate to homepage on successful login
+      navigate("/welcome"); // Navigate to Home.js after successful login
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -49,9 +56,9 @@ export default function LoginPage() {
     <div className="bg-[#1a1a1a] text-gray-100 font-sans min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#262626] p-8 rounded-2xl shadow-lg border border-gray-700/50">
         <h1 className="text-3xl font-bold text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
-          Welcome Back to Arotu
+          My Guy How Far?
         </h1>
-        <p className="text-center text-gray-400 mb-6">Login to continue your journey.</p>
+        <p className="text-center text-gray-400 mb-6">Login for here.</p>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
@@ -86,9 +93,9 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="text-center text-sm text-gray-400 mt-6">
-          Don't have an account?{" "}
+          You no get account?{" "}
           <Link to="/register" className="font-medium text-orange-400 hover:underline">
-            Register here
+            Register for here
           </Link>
         </p>
       </div>

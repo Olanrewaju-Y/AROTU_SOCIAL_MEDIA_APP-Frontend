@@ -10,9 +10,9 @@ import { Search, Bell, Send } from "lucide-react";
 
 const navItems = [
   { to: "/welcome", icon: Home, label: "Home" },
-  { to: "/rooms", icon: DoorOpen, label: "Rooms" }, // Replace Search with Rooms
-  { to: "/create-post", icon: PlusSquare, label: "Create" },
-  { to: "/chats", icon: MessageCircle, label: "Chats" },
+  { to: "/rooms", icon: DoorOpen, label: "Rooms" },
+  { to: "/create-post", icon: PlusSquare, label: "Post" },
+  { to: "/chats", icon: MessageCircle, label: "Chat" },
   { to: "/profile", icon: CircleUserRound, label: "Profile" },
 ];
 
@@ -26,12 +26,15 @@ export default function MobileNavbar() {
           <Link
             key={to}
             to={to}
-            className={`p-2 rounded-full transition-colors ${
-              location.pathname === to ? "text-purple-400" : "hover:text-purple-400 text-gray-400"
+            className={`flex flex-col items-center p-2 transition-colors ${
+              location.pathname === to
+                ? "text-purple-400"
+                : "hover:text-purple-400 text-gray-400"
             }`}
             aria-label={label}
           >
-            <Icon size={28} strokeWidth={2.5} />
+            <Icon size={24} strokeWidth={2} />
+            <span className="text-xs mt-1">{label}</span>
           </Link>
         ))}
       </div>

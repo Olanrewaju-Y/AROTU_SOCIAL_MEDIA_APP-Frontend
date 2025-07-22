@@ -1,73 +1,83 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { TopHeader } from "../components/Navbar"; // Import TopHeader
+import { Link, useNavigate } from "react-router-dom";
+import { TopHeader } from "../components/Navbar";
 import MobileNavbar from "../components/Navbar";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart,
   MessageCircle,
   Send,
   MoreHorizontal,
+  UserPlus,
+  Image as ImageIcon,
+  Globe,
+  Users,
+  UserCheck,
+  X,
 } from "lucide-react";
+import axios from "axios";
 
+const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 const navCategories = ["Live", "iFollow", "myFans", "myPadis"];
 
 export default function HomePage() {
   const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [activeCategory, setActiveCategory] = useState("iFollow");
+  const [loading, setLoading] = useState(true);
+  const [postLoading, setPostLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  // State for the new post creation modal
+  const [isCreatingPost, setIsCreatingPost] = useState(false);
+  const [newPostData, setNewPostData] = useState({
+    content: "",
+    image: "",
+    visibility: "public",
+  });
+
+  const currentUserId = localStorage.getItem("userId");
+  const navigate = useNavigate();
+
+  // Fetch posts – no authentication is required to get posts.
   useEffect(() => {
     const fetchPosts = async () => {
       setLoading(true);
       setError(null);
       try {
-        const token = localStorage.getItem("token"); // Retrieve token from localStorage
-        let endpoint = `${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/posts/all-posts`;
-
-        // Change endpoint based on active category
-        if (activeCategory === "myPadis") {
-          endpoint = `${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/posts/`;
-        }
-
+        // Use friends feed endpoint if category is "iFollow" or "myFans", else all posts.
+        const endpoint =
+          activeCategory === "myPadis"
+            ? `${BASE_URL}/api/posts/` // friend feed endpoint
+            : `${BASE_URL}/api/posts/all-posts`;
         const res = await fetch(endpoint, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          method: "GET"
+          // No Authorization header needed
         });
-
         if (!res.ok) {
-          throw new Error("Failed to fetch posts. Are you logged in?");
+          throw new Error("Failed to fetch posts.");
         }
+        let data = await res.json();
 
-        const data = await res.json();
-
-        // Filter posts for "myFans" category
+        // For "myFans", filter posts by followers (assumed to be provided by your API)
         if (activeCategory === "myFans") {
-          const followers = await fetch(
-            `${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/users/followers`,
-            {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
-          );
-
-          const followersData = await followers.json();
-          const followerIds = followersData.map((follower) => follower._id);
-
-          // Filter posts to include only those from followers
-          const filteredPosts = data.filter((post) =>
-            followerIds.includes(post.author?._id)
-          );
-
-          setPosts(filteredPosts);
-        } else {
-          setPosts(data);
+          // If token exists, fetch followers; otherwise, skip filtering.
+          const token = localStorage.getItem("token");
+          if (token) {
+            const followersRes = await fetch(
+              `${BASE_URL}/api/users/followers`,
+              {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            const followersData = await followersRes.json();
+            const followerIds = followersData.map((f) => f._id);
+            data = data.filter((post) =>
+              followerIds.includes(post.author?._id)
+            );
+          }
         }
+        setPosts(data);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -76,16 +86,158 @@ export default function HomePage() {
     };
 
     fetchPosts();
-  }, [activeCategory]); // Refetch posts when activeCategory changes
+  }, [activeCategory]);
+
+  const handleNewPostChange = (e) => {
+    const { id, value } = e.target;
+    setNewPostData({ ...newPostData, [id]: value });
+  };
+
+  // Create new post using POST '/api/posts/'
+  const handleCreatePost = async () => {
+    if (!newPostData.content.trim()) return;
+    if (newPostData.content.length > 300) {
+      setError("Content cannot exceed 300 characters.");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    setPostLoading(true);
+    setError(null);
+    try {
+      // Use the same endpoint as CreatePost.js
+      const res = await axios.post(
+        `${BASE_URL}/api/posts/`,
+        newPostData,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPosts((prev) => [res.data, ...prev]);
+      setNewPostData({ content: "", image: "", visibility: "public" });
+      setIsCreatingPost(false);
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to create post");
+      console.error(err);
+    } finally {
+      setPostLoading(false);
+    }
+  };
+
+  // Update a post using PUT '/posts/:id'
+  const handleUpdatePost = async (postId, updatedContent) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const res = await axios.put(
+        `${BASE_URL}/posts/${postId}`,
+        { content: updatedContent },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setPosts((prev) =>
+        prev.map((post) => (post._id === postId ? res.data : post))
+      );
+    } catch (err) {
+      setError("Failed to update post");
+      console.error(err);
+    }
+  };
+
+  // Delete a post using DELETE '/posts/:id'
+  const handleDeletePost = async (postId) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      await axios.delete(`${BASE_URL}/posts/${postId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPosts((prev) => prev.filter((post) => post._id !== postId));
+    } catch (err) {
+      setError("Failed to delete post");
+      console.error(err);
+    }
+  };
+
+  // Toggle like using PATCH '/posts/:id/like'
+  const handleToggleLike = async (postId) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const res = await axios.patch(
+        `${BASE_URL}/posts/${postId}/like`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Update the post in the feed (assuming res.data returns the updated post)
+      setPosts((prev) =>
+        prev.map((post) => (post._id === postId ? res.data : post))
+      );
+    } catch (err) {
+      setError("Failed to toggle like");
+      console.error(err);
+    }
+  };
+
+  // Add comment using POST '/posts/:id/comment'
+  const handleAddComment = async (postId, commentText) => {
+    if (!commentText.trim()) return;
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      const res = await axios.post(
+        `${BASE_URL}/posts/${postId}/comment`,
+        { text: commentText },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Update the post's comments – here we assume res.data returns updated post
+      setPosts((prev) =>
+        prev.map((post) => (post._id === postId ? res.data : post))
+      );
+    } catch (err) {
+      setError("Failed to add comment");
+      console.error(err);
+    }
+  };
+
+  // Follow a user – add the follow icon functionality.
+  // Assume an endpoint POST '/users/follow/:id' exists.
+  const handleFollowUser = async (userIdToFollow) => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+    try {
+      await axios.post(
+        `${BASE_URL}/users/follow/${userIdToFollow}`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Optionally update UI to mark that user as followed.
+      alert("User followed successfully");
+    } catch (err) {
+      setError("Failed to follow user");
+      console.error(err);
+    }
+  };
 
   return (
     <div className="bg-black text-gray-100 font-sans min-h-screen">
-      {/* Top Header */}
       <TopHeader />
-
-      {/* Main content area */}
       <main className="pt-16 pb-20">
-        {/* Top Navigation Categories */}
         <section className="sticky top-16 z-40 bg-black/80 backdrop-blur-md border-b border-gray-800">
           <div className="flex justify-around items-center h-12 text-sm font-semibold text-gray-400">
             {navCategories.map((category) => (
@@ -104,27 +256,125 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Create Post Trigger */}
+        <div className="p-4 border-b border-gray-800">
+          <div className="flex items-center space-x-3">
+            <img
+              src={
+                JSON.parse(localStorage.getItem("user"))?.avatar ||
+                `https://i.pravatar.cc/150?u=${currentUserId}`
+              }
+              alt="Your avatar"
+              className="w-10 h-10 rounded-full object-cover"
+            />
+            <div
+              onClick={() => setIsCreatingPost(true)}
+              className="flex-1 text-gray-500 bg-[#1a1a1a] rounded-full py-2 px-4 cursor-pointer hover:bg-gray-800 transition-colors"
+            >
+              What's on your mind?
+            </div>
+            <button
+              onClick={() => setIsCreatingPost(true)}
+              className="p-2 rounded-full hover:bg-gray-800"
+              aria-label="Create a post with an image"
+            >
+              <ImageIcon size={24} className="text-purple-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Create Post Modal */}
+        <AnimatePresence>
+          {isCreatingPost && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            >
+              <motion.div
+                initial={{ y: 50, scale: 0.95 }}
+                animate={{ y: 0, scale: 1 }}
+                exit={{ y: 50, scale: 0.95 }}
+                className="relative w-full max-w-lg bg-[#262626] p-6 rounded-2xl shadow-lg border border-gray-700/50"
+              >
+                <button
+                  onClick={() => setIsCreatingPost(false)}
+                  className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-700"
+                >
+                  <X size={24} />
+                </button>
+                <h2 className="text-2xl font-bold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
+                  Create Post
+                </h2>
+                <div className="space-y-4">
+                  <textarea
+                    id="content"
+                    rows="5"
+                    value={newPostData.content}
+                    onChange={handleNewPostChange}
+                    placeholder="Share your thoughts..."
+                    className={`w-full p-3 bg-[#1a1a1a] border rounded-lg focus:ring-orange-500 focus:border-orange-500 transition ${
+                      newPostData.content.length > 300 ? "border-red-500" : "border-gray-600"
+                    }`}
+                  />
+                  <p className={`text-sm text-right ${newPostData.content.length > 300 ? "text-red-500" : "text-gray-400"}`}>
+                    {newPostData.content.length}/300
+                  </p>
+                  <input
+                    type="url"
+                    id="image"
+                    value={newPostData.image}
+                    onChange={handleNewPostChange}
+                    placeholder="Image URL (optional)"
+                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-orange-500 focus:border-orange-500 transition"
+                  />
+                  <select
+                    id="visibility"
+                    value={newPostData.visibility}
+                    onChange={handleNewPostChange}
+                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-orange-500 focus:border-orange-500 transition"
+                  >
+                    <option value="public">Public</option>
+                    <option value="friends">Friends Only</option>
+                    <option value="followers">Followers Only</option>
+                  </select>
+                  {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                  <button
+                    onClick={handleCreatePost}
+                    disabled={postLoading}
+                    className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50"
+                  >
+                    {postLoading ? "Posting..." : "Post"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Feed Posts */}
-        <div className="mt-4">
+        <div className="mt-1">
           {loading && (
             <p className="text-center text-gray-400 py-10">Loading posts...</p>
           )}
-          {error && (
+          {error && !isCreatingPost && (
             <p className="text-center text-red-500 py-10">{error}</p>
           )}
           {!loading && !error && posts.length === 0 && (
             <div className="text-center py-20">
-              <p className="text-gray-400">No posts yet. Be the first to share!</p>
-              <Link
-                to="/create-post"
+              <p className="text-gray-400">
+                No posts yet. Be the first to share!
+              </p>
+              <button
+                onClick={() => setIsCreatingPost(true)}
                 className="mt-4 inline-block bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition"
               >
                 Create Post
-              </Link>
+              </button>
             </div>
           )}
           {!loading &&
-            !error &&
             posts.map((post, i) => (
               <motion.article
                 key={post._id || i}
@@ -145,18 +395,29 @@ export default function HomePage() {
                         alt={post.author?.username}
                         className="w-10 h-10 rounded-full object-cover"
                       />
-                      <div>
+                      <div className="flex flex-col">
                         <span className="font-semibold text-sm text-white">
                           {post.author?.username || "Anonymous"}
                         </span>
                         <p className="text-xs text-gray-500">2h ago</p>
                       </div>
+                      {/* Follow Icon: Only show if the post author is not you */}
+                      {post.author?._id !== currentUserId && (
+                        <button
+                          onClick={() =>
+                            handleFollowUser(post.author._id)
+                          }
+                          className="ml-2 text-gray-400 hover:text-purple-500 transition-colors"
+                          title="Follow user"
+                        >
+                          <UserPlus size={18} />
+                        </button>
+                      )}
                     </div>
                     <button className="p-1 rounded-full hover:bg-gray-800">
                       <MoreHorizontal size={20} />
                     </button>
                   </div>
-
                   {/* Post Content */}
                   <p className="whitespace-pre-line text-gray-300 text-sm leading-relaxed mb-3">
                     {post.content}
@@ -168,11 +429,13 @@ export default function HomePage() {
                       className="rounded-lg mt-2 w-full object-cover"
                     />
                   )}
-
                   {/* Post Actions */}
                   <div className="flex items-center justify-between pt-3 text-gray-400">
                     <div className="flex items-center space-x-5">
-                      <button className="flex items-center space-x-1.5 group">
+                      <button
+                        onClick={() => handleToggleLike(post._id)}
+                        className="flex items-center space-x-1.5 group"
+                      >
                         <Heart
                           size={22}
                           className="group-hover:text-red-500 transition-colors"
@@ -198,13 +461,12 @@ export default function HomePage() {
                       </button>
                     </div>
                   </div>
+                  {/* Optionally, add update/delete/comment UI (e.g. a comment form calling handleAddComment) */}
                 </div>
               </motion.article>
             ))}
         </div>
       </main>
-
-      {/* Bottom Navigation Bar */}
       <MobileNavbar />
     </div>
   );

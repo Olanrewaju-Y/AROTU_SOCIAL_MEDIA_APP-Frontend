@@ -10,10 +10,14 @@ import WelcomePage from './pages/Welcome';
 import CreatePostPage from './pages/CreatePost';
 import ChatsPage from './pages/ChatsPage';
 import ProfilePage from './pages/Profile';
+import FriendsPage from './pages/FriendsPage';
 import RoomsPageWrapper from './pages/RoomsPageWrapper';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import axios from 'axios';
+
+import Dashboard from './pages/Dashboard';
+import AdminPanel from './pages/AdminPanel';
 
 // ✅ Set default Authorization header globally if token exists
 const token = localStorage.getItem('token');
@@ -26,15 +30,21 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<WelcomePage />} />
+        <Route path="/home" element={<HomePage />} />        
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        
 
         {/* ✅ Protected routes */}
-        <Route path="/welcome" element={<ProtectedRoute element={<HomePage />} />} />
         <Route path="/create-post" element={<ProtectedRoute element={<CreatePostPage />} />} />
         <Route path="/chats" element={<ProtectedRoute element={<ChatsPage />} />} />
         <Route path="/rooms" element={<ProtectedRoute element={<RoomsPageWrapper />} />} />
         <Route path="/profile" element={<ProtectedRoute element={<ProfilePage />} />} />
+        <Route path="/friends" element={<ProtectedRoute element={<FriendsPage />} />} />
+      
+      {/* Admin routes */}
+      <Route path="/dashboard" element={<ProtectedRoute element={<Dashboard />} />} />
+      <Route path="/admin" element={<ProtectedRoute element={<AdminPanel />} requiredRole="admin" />} />
       </Routes>
     </BrowserRouter>
   );

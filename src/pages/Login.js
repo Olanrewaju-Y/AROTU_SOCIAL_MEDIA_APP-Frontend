@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -34,18 +35,17 @@ export default function LoginPage() {
         throw new Error(data.message || "Failed to login");
       }
      
-
       const { token, user } = data; // Destructure token and user from data
 
-      // Fix the key: use _id instead of id
-      const fixedUser = { _id: user.id, username: user.username };
-
+      // The user object from backend likely has `_id`.
+      // Storing the full user object and the userId separately for convenience.
       localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(fixedUser));
+      localStorage.setItem('user', JSON.stringify(user)); // Store the whole user object.
+      localStorage.setItem('userId', user._id); // Store userId for quick access.
 
       console.log("Login successful:", data);
       setLoading(false);
-      navigate("/welcome"); // Navigate to Home.js after successful login
+      navigate("/home"); // Navigate to home page after successful login
     } catch (err) {
       setError(err.message);
       setLoading(false);
@@ -53,8 +53,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="bg-[#1a1a1a] text-gray-100 font-sans min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-[#262626] p-8 rounded-2xl shadow-lg border border-gray-700/50">
+    <div
+      className="text-gray-100 font-sans min-h-screen bg-cover bg-center"
+      style={{ backgroundImage: `url('/arotu_login_bg.jpg')` }}
+    >
+      <div className="min-h-screen flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="relative w-full max-w-md bg-[#262626] p-8 rounded-2xl shadow-lg border border-gray-700/50">
+          <Link
+            to="/"
+            className="absolute top-4 left-4 text-gray-400 hover:text-white transition-colors"
+            aria-label="Go back to Welcome page"
+          >
+            <ArrowLeft size={24} />
+          </Link>
         <h1 className="text-3xl font-bold text-center mb-2 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
           My Guy How Far?
         </h1>
@@ -87,6 +98,11 @@ export default function LoginPage() {
               required
             />
           </div>
+          <div className="flex items-center justify-end text-sm">
+            <Link to="/forgot-password" className="text-orange-400 hover:underline">
+              Forgot Password?
+            </Link>
+          </div>
           {error && <p className="text-red-500 text-sm text-center">{error}</p>}
           <button disabled={loading} className="w-full bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed">
             {loading ? "Logging in..." : "Login"}
@@ -98,6 +114,7 @@ export default function LoginPage() {
             Register for here
           </Link>
         </p>
+        </div>
       </div>
     </div>
   );

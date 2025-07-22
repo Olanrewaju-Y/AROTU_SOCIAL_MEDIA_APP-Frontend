@@ -25,19 +25,19 @@ const sections = [
     content: ` In a land of 500+ languages — from the peaks of Oyo; to Jos; to the creeks of the Niger Delta — one dream unites us: connection!
 Nigeria, diverse in tribe and tongue, but bound by the desire to share, to belong.
 This is Arotu’s story.`,
-    image: "./public/arotu_people.jpg"
+    image: "/arotu_people.jpg"
   },
   {
     id: "name",
     title: "The Name, The Dream",
     content: ` Arotu is more than a name. It’s a vision. Born from the three major languages of Nigeria — Ara (Yoruba) – soul or person, Otu (Igbo) – group or family, Tare (Hausa) – together or unity — it means: A person. A group. Together.`,
-    image: "../public/arotu_drummers.jpg"
+    image: "/arotu_drummers.jpg"
   },   
   {
     id: "unity",
     title: "A Platform for Unity",
     content: ` In a world full of divisions, Arotu builds bridges. Through language, stories, and digital connection — we remind each other that our differences are our greatest strength.`,
-    image: ".../public/arotu_men.jpg"
+    image: "/arotu_men.jpg"
   }
 ];
 
@@ -87,7 +87,7 @@ export default function WelcomePage() {
   return (
     <div className="bg-black text-white font-sans min-h-screen flex flex-col">
       {/* Drum sound */}
-      <audio ref={audioRef} src="https://www.epidemicsound.com/sound-effects/tracks/224bca89-9e06-4b36-83b7-5dd02a42b900/" preload="auto" />
+      <audio ref={audioRef} src="/TerryG-Totori.mp3" preload="auto" />
 
       {/* Cinematic Slide */}
       <section
@@ -144,7 +144,7 @@ export default function WelcomePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.2 }}
           >
-            <Link to="/login" className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-2 px-4 rounded-lg">
+            <Link to="/home" className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold py-2 px-4 rounded-lg">
               Get Started
             </Link>
             <Link to="/about" className="text-gray-300 hover:underline">

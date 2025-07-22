@@ -6,7 +6,7 @@ import axios from "axios";
 
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 
-// Mock conversations (replace with your API call if needed)
+// For demo purposes, we still have some mock conversations.
 const mockConversations = [
   { 
     id: 1, 
@@ -20,28 +20,29 @@ const mockConversations = [
     receiver_id: "user_2",
     messages: []
   },
-  // ... add more if needed
 ];
 
 function ChatsPage() {
   const [conversations, setConversations] = useState([]);
   const [selectedConv, setSelectedConv] = useState(null);
   const [newMsg, setNewMsg] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
   const navigate = useNavigate();
 
+  // On mount, load mock conversations
   useEffect(() => {
-    // Load conversations (could be replaced with an API call)
     setConversations(mockConversations);
   }, []);
 
-  // Logout function: clear token and redirect
+  // Logout: clear token and redirect.
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("userId");
     navigate("/login");
   };
 
-  // Fetch private messages for selected conversation using GET /messages/private/:userId
+  // Fetch private messages for selected conversation
   const handleConversationClick = async (conv) => {
     setSelectedConv(conv);
     const token = localStorage.getItem("token");
@@ -62,7 +63,7 @@ function ChatsPage() {
     }
   };
 
-  // Send message using POST /messages/private
+  // Send a message using POST /messages/private
   const handleSendMessage = async () => {
     if (!newMsg.trim() || !selectedConv) return;
     const token = localStorage.getItem("token");
@@ -85,7 +86,7 @@ function ChatsPage() {
     setNewMsg("");
 
     try {
-      const res = await axios.post(
+      await axios.post(
         `${BASE_URL}/api/messages/private`,
         {
           receiver: selectedConv.receiver_id,
@@ -98,9 +99,51 @@ function ChatsPage() {
           },
         }
       );
-      // Optionally update messages with response data if needed
     } catch (err) {
       console.error("Failed to send private message:", err);
+    }
+  };
+
+  // Search users by query using GET /users/search
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (searchQuery.trim()) {
+      const fetchUsers = async () => {
+        try {
+          const res = await axios.get(
+            `${BASE_URL}/api/users/search?query=${encodeURIComponent(searchQuery)}`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          setSearchResults(res.data);
+        } catch (err) {
+          console.error("Search error:", err);
+        }
+      };
+      fetchUsers();
+    } else {
+      setSearchResults([]);
+    }
+  }, [searchQuery]);
+
+  // Block a user using PATCH /users/block/:id
+  const handleBlockUser = async (userIdToBlock) => {
+    const token = localStorage.getItem("token");
+    try {
+      await axios.patch(
+        `${BASE_URL}/api/users/block/${userIdToBlock}`,
+        null,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      // After blocking, remove the user from search results.
+      setSearchResults((prev) =>
+        prev.filter((user) => user._id !== userIdToBlock)
+      );
+    } catch (err) {
+      console.error("Failed to block user:", err);
     }
   };
 
@@ -108,9 +151,48 @@ function ChatsPage() {
     <div className="bg-black text-gray-100 font-sans h-screen flex flex-col">
       <TopHeader />
       <div className="container mx-auto pt-16 pb-4 flex-1 flex">
-        {/* Sidebar Conversations */}
+        {/* Sidebar: Search and Conversations */}
         <aside className="w-full md:w-1/3 bg-[#262626] p-4 rounded-l-md overflow-y-auto">
           <h2 className="text-2xl font-bold mb-6">Conversations</h2>
+          {/* Search Users */}
+          <div className="mb-4">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search users..."
+              className="w-full px-4 py-2 mb-2 bg-gray-800 border border-gray-700 rounded-md focus:outline-none"
+            />
+            {searchResults.length > 0 && (
+              <ul className="space-y-2">
+                {searchResults.map((user) => (
+                  <li key={user._id} className="flex items-center justify-between bg-gray-700 p-2 rounded-md">
+                    <span>{user.username}</span>
+                    <div className="space-x-2">
+                      <button
+                        onClick={() => handleConversationClick({
+                          id: user._id,
+                          name: user.username,
+                          receiver_id: user._id,
+                          messages: [],
+                        })}
+                        className="px-2 py-1 bg-purple-600 rounded hover:bg-purple-700 text-xs"
+                      >
+                        Chat
+                      </button>
+                      <button
+                        onClick={() => handleBlockUser(user._id)}
+                        className="px-2 py-1 bg-red-500 rounded hover:bg-red-600 text-xs"
+                      >
+                        Block
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          {/* Conversations List */}
           <ul className="space-y-3">
             {conversations.map((conv) => (
               <li key={conv.id}>
@@ -167,10 +249,7 @@ function ChatsPage() {
               <div className="flex-1 overflow-y-auto space-y-3 mb-4">
                 {selectedConv.messages &&
                   selectedConv.messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className="p-3 bg-gray-700 rounded-md"
-                    >
+                    <div key={msg.id} className="p-3 bg-gray-700 rounded-md">
                       <strong>{msg.user}:</strong> {msg.text}
                     </div>
                   ))}

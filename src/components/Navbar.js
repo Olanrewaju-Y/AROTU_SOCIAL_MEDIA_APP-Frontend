@@ -1,17 +1,17 @@
 import { Link, useLocation } from "react-router-dom";
 import {
   Home,
-  PlusSquare,
+  Users,
   CircleUserRound,
   MessageCircle,
-  DoorOpen, // Import an icon for Rooms
+  DoorOpen,
 } from "lucide-react";
 import { Search, Bell, Send } from "lucide-react";
 
 const navItems = [
-  { to: "/welcome", icon: Home, label: "Home" },
+  { to: "/home", icon: Home, label: "Home" },
   { to: "/rooms", icon: DoorOpen, label: "Rooms" },
-  { to: "/create-post", icon: PlusSquare, label: "Post" },
+  { to: "/friends", icon: Users, label: "Friends" },
   { to: "/chats", icon: MessageCircle, label: "Chat" },
   { to: "/profile", icon: CircleUserRound, label: "Profile" },
 ];

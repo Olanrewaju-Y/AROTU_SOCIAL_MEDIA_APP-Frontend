@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
 import MobileNavbar from "../components/Navbar";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
 import { Settings, LogOut, X, Camera } from "lucide-react";
+
+const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 
 // Helper component for profile stats
 const StatItem = ({ count, label }) => (
@@ -39,23 +42,26 @@ const FormInput = ({ id, label, value, onChange, type = "text", rows = 1 }) => (
 );
 
 const FormSelect = ({ id, label, value, onChange, children }) => (
-    <div>
-        <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
-            {label}
-        </label>
-        <select
-            id={id}
-            value={value}
-            onChange={onChange}
-            className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
-        >
-            {children}
-        </select>
-    </div>
+  <div>
+    <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
+      {label}
+    </label>
+    <select
+      id={id}
+      value={value}
+      onChange={onChange}
+      className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 appearance-none"
+    >
+      {children}
+    </select>
+  </div>
 );
 
-
 export default function ProfilePage() {
+  const { id } = useParams(); // if provided, viewing another user's profile
+  const navigate = useNavigate();
+  const localUserId = localStorage.getItem("userId");
+
   const [profile, setProfile] = useState({
     username: "",
     bio: "",
@@ -70,30 +76,28 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+
+  const isSelf = !id || id === localUserId;
+  const isFriend = profile.friends && profile.friends.includes(localUserId);
 
   useEffect(() => {
     const fetchProfile = async () => {
       setLoading(true);
       setError(null);
       const token = localStorage.getItem("token");
+      if (!token) {
+        navigate("/login");
+        return;
+      }
       try {
-        const res = await fetch(
-          `${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/users/me`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-        if (!res.ok) {
-            if (res.status === 401) {
-                navigate('/login'); // Redirect if unauthorized
-            }
-            throw new Error("Failed to fetch profile");
-        }
-        const data = await res.json();
+        // If id is provided and not self, fetch that user's profile; otherwise fetch your own profile via /me
+        const endpoint = id && !isSelf 
+          ? `${BASE_URL}/api/users/${id}` 
+          : `${BASE_URL}/api/users/me`;
+        const res = await axios.get(endpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = res.data;
         setProfile(prev => ({
           ...prev,
           ...data,
@@ -101,13 +105,16 @@ export default function ProfilePage() {
           friends: data.friends || [],
         }));
       } catch (err) {
-        setError(err.message);
+        if (err.response?.status === 401) {
+          navigate("/login");
+        }
+        setError(err.response?.data?.message || "Failed to fetch profile");
       } finally {
         setLoading(false);
       }
     };
     fetchProfile();
-  }, [navigate]);
+  }, [id, isSelf, navigate]);
 
   const handleChange = (e) => {
     const { id, value } = e.target;
@@ -128,31 +135,42 @@ export default function ProfilePage() {
       avatar: profile.avatar,
     };
     try {
-      const res = await fetch(
-        `${process.env.REACT_APP_BACKEND_BASE_API_URL}/api/users/me`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(profileUpdateData),
-        }
-      );
-      if (!res.ok) throw new Error("Failed to update profile");
-      const data = await res.json();
+      const res = await axios.put(`${BASE_URL}/api/users/me`, profileUpdateData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = res.data;
       setProfile(prev => ({ ...prev, ...data }));
       setEditing(false);
     } catch (err) {
-      setError(err.message);
+      setError(err.response?.data?.message || "Failed to update profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // New functionality: "Make Friend"
+  const handleMakeFriend = async () => {
+    setError(null);
+    const token = localStorage.getItem("token");
+    try {
+      await axios.post(`${BASE_URL}/api/users/friends`, 
+        { friendId: profile._id }, // Send the profile id as friendId.
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      // Update local profile friends list to include the current user id.
+      setProfile(prev => ({ ...prev, friends: [...prev.friends, localUserId] }));
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to make friend");
     }
   };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    localStorage.removeItem("userId");
     navigate("/login");
   };
 
@@ -172,9 +190,11 @@ export default function ProfilePage() {
           <LogOut size={24} />
         </button>
         <h1 className="text-lg font-bold">{profile.username}</h1>
-        <button onClick={() => setEditing(true)} className="p-2 -mr-2 text-gray-300 hover:text-white">
-          <Settings size={24} />
-        </button>
+        {isSelf && (
+          <button onClick={() => setEditing(true)} className="p-2 -mr-2 text-gray-300 hover:text-white">
+            <Settings size={24} />
+          </button>
+        )}
       </header>
 
       {/* Main Content */}
@@ -188,9 +208,11 @@ export default function ProfilePage() {
                 alt="Avatar"
                 className="w-24 h-24 rounded-full object-cover border-4 border-gray-800"
               />
-              <button onClick={() => setEditing(true)} className="absolute bottom-0 right-0 bg-purple-600 p-2 rounded-full border-2 border-black">
-                <Camera size={16} />
-              </button>
+              {isSelf && (
+                <button onClick={() => setEditing(true)} className="absolute bottom-0 right-0 bg-purple-600 p-2 rounded-full border-2 border-black">
+                  <Camera size={16} />
+                </button>
+              )}
             </div>
             <div className="flex-1 grid grid-cols-3 gap-2">
               <StatItem count={profile.followers.length} label="Followers" />
@@ -200,26 +222,37 @@ export default function ProfilePage() {
           </div>
           <div>
             <h2 className="text-xl font-semibold">{profile.username}</h2>
-            <p className="text-sm text-purple-400 capitalize">{profile.level || 'Newbie'}</p>
+            <p className="text-sm text-purple-400 capitalize">{profile.level || "Newbie"}</p>
             <p className="text-gray-300 mt-2 text-sm">{profile.bio || "No bio yet."}</p>
-            <p className="text-gray-500 mt-1 text-xs italic">"{profile.status || "Hey there! I'm using Arotu."}"</p>
+            <p className="text-gray-500 mt-1 text-xs italic">
+              "{profile.status || "Hey there! I'm using Arotu."}"
+            </p>
           </div>
-          <button onClick={() => setEditing(true)} className="mt-4 w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 rounded-lg transition-colors">
-            Edit Profile
-          </button>
+          {/* If viewing someone else's profile and you are not already friends, show "Make Friend" */}
+          {!isSelf && !isFriend && (
+            <button onClick={handleMakeFriend} className="mt-4 w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition">
+              Make Friend
+            </button>
+          )}
+          {error && <p className="text-red-500 mt-2">{error}</p>}
+          {isSelf && (
+            <button onClick={() => setEditing(true)} className="mt-4 w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-2 rounded-lg transition-colors">
+              Edit Profile
+            </button>
+          )}
         </section>
 
         {/* User's Posts/Content Tabs would go here */}
         <section className="border-t border-gray-800 mt-4">
-            <div className="text-center py-20">
-                <p className="text-gray-500">Your posts will appear here.</p>
-            </div>
+          <div className="text-center py-20">
+            <p className="text-gray-500">Your posts will appear here.</p>
+          </div>
         </section>
       </main>
 
       {/* Edit Profile Modal */}
       <AnimatePresence>
-        {editing && (
+        {editing && isSelf && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -244,16 +277,16 @@ export default function ProfilePage() {
                 <FormInput id="bio" label="Bio" value={profile.bio} onChange={handleChange} type="textarea" rows={3} />
                 <FormInput id="status" label="Status" value={profile.status} onChange={handleChange} />
                 <div className="grid grid-cols-2 gap-4">
-                    <FormSelect id="relationshipStatus" label="Relationship" value={profile.relationshipStatus} onChange={handleChange}>
-                        <option value="single">Single</option>
-                        <option value="taken">Taken</option>
-                        <option value="complicated">It's Complicated</option>
-                    </FormSelect>
-                    <FormSelect id="gender" label="Gender" value={profile.gender} onChange={handleChange}>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
-                    </FormSelect>
+                  <FormSelect id="relationshipStatus" label="Relationship" value={profile.relationshipStatus} onChange={handleChange}>
+                    <option value="single">Single</option>
+                    <option value="taken">Taken</option>
+                    <option value="complicated">It's Complicated</option>
+                  </FormSelect>
+                  <FormSelect id="gender" label="Gender" value={profile.gender} onChange={handleChange}>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </FormSelect>
                 </div>
                 <div className="flex justify-end items-center pt-2">
                   <button

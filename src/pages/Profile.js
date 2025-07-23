@@ -3,7 +3,18 @@ import MobileNavbar from "../components/Navbar";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
-import { Settings, LogOut, X, Camera } from "lucide-react";
+import {
+  Settings,
+  LogOut,
+  X,
+  Camera,
+  MapPin,
+  Heart,
+  Users2,
+  Binoculars,
+  Award,
+  Quote,
+} from "lucide-react";
 
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 
@@ -15,8 +26,19 @@ const StatItem = ({ count, label }) => (
   </div>
 );
 
+// Helper component for profile details with icons
+const ProfileDetailItem = ({ icon, text, label }) => (
+  <div className="flex items-center space-x-3 bg-[#1c1c1c] p-3 rounded-lg border border-gray-800">
+    <div className="text-purple-400">{icon}</div>
+    <div>
+      <p className="text-xs font-medium text-gray-400">{label}</p>
+      <p className="text-sm font-semibold text-white capitalize">{text}</p>
+    </div>
+  </div>
+);
+
 // Helper component for form fields
-const FormInput = ({ id, label, value, onChange, type = "text", rows = 1 }) => (
+const FormInput = ({ id, label, value, onChange, type = "text", rows = 1, placeholder = "" }) => (
   <div>
     <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
       {label}
@@ -27,6 +49,7 @@ const FormInput = ({ id, label, value, onChange, type = "text", rows = 1 }) => (
         rows={rows}
         value={value}
         onChange={onChange}
+        placeholder={placeholder}
         className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
     ) : (
@@ -35,6 +58,7 @@ const FormInput = ({ id, label, value, onChange, type = "text", rows = 1 }) => (
         id={id}
         value={value}
         onChange={onChange}
+        placeholder={placeholder}
         className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
     )}
@@ -61,24 +85,29 @@ export default function ProfilePage() {
   const { id } = useParams(); // if provided, viewing another user's profile
   const navigate = useNavigate();
   const localUserId = localStorage.getItem("userId");
-
-  const [profile, setProfile] = useState({
+  
+  const [user, setUser] = useState({
     username: "",
     bio: "",
     avatar: "",
     status: "",
     followers: [],
     friends: [],
-    level: "",
+    level: "newbie",
     relationshipStatus: "single",
     gender: "other",
+    location: "",
+    phone: "",
+    lookingFor: "friendship",
+    roomNickname: "",
   });
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("main");
 
   const isSelf = !id || id === localUserId;
-  const isFriend = profile.friends && profile.friends.includes(localUserId);
+  const isFriend = user.friends && user.friends.includes(localUserId);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -98,7 +127,7 @@ export default function ProfilePage() {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = res.data;
-        setProfile(prev => ({
+        setUser(prev => ({
           ...prev,
           ...data,
           followers: data.followers || [],
@@ -118,7 +147,7 @@ export default function ProfilePage() {
 
   const handleChange = (e) => {
     const { id, value } = e.target;
-    setProfile((prev) => ({ ...prev, [id]: value }));
+    setUser((prev) => ({ ...prev, [id]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -128,11 +157,16 @@ export default function ProfilePage() {
     const token = localStorage.getItem("token");
 
     const profileUpdateData = {
-      bio: profile.bio,
-      status: profile.status,
-      relationshipStatus: profile.relationshipStatus,
-      gender: profile.gender,
-      avatar: profile.avatar,
+      bio: user.bio,
+      status: user.status,
+      relationshipStatus: user.relationshipStatus,
+      gender: user.gender,
+      avatar: user.avatar,
+      location: user.location,
+      phone: user.phone,
+      lookingFor: user.lookingFor,
+      level: user.level,
+      roomNickname: user.roomNickname,
     };
     try {
       const res = await axios.put(`${BASE_URL}/api/users/me`, profileUpdateData, {
@@ -142,8 +176,9 @@ export default function ProfilePage() {
       });
 
       const data = res.data;
-      setProfile(prev => ({ ...prev, ...data }));
+      setUser(prev => ({ ...prev, ...data }));
       setEditing(false);
+      setActiveTab("main"); // Reset tab on successful save
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update profile");
     } finally {
@@ -157,11 +192,11 @@ export default function ProfilePage() {
     const token = localStorage.getItem("token");
     try {
       await axios.post(`${BASE_URL}/api/users/friends`, 
-        { friendId: profile._id }, // Send the profile id as friendId.
+        { friendId: user._id }, // Send the user id as friendId.
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      // Update local profile friends list to include the current user id.
-      setProfile(prev => ({ ...prev, friends: [...prev.friends, localUserId] }));
+      // Update local user's friends list to include the current user id.
+      setUser(prev => ({ ...prev, friends: [...prev.friends, localUserId] }));
     } catch (err) {
       setError(err.response?.data?.message || "Failed to make friend");
     }
@@ -174,7 +209,7 @@ export default function ProfilePage() {
     navigate("/login");
   };
 
-  if (loading && !profile.username) {
+  if (loading && !user.username) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
         <p className="text-gray-400">Loading Profile...</p>
@@ -189,7 +224,7 @@ export default function ProfilePage() {
         <button onClick={handleLogout} className="p-2 -ml-2 text-red-500 hover:text-red-400">
           <LogOut size={24} />
         </button>
-        <h1 className="text-lg font-bold">{profile.username}</h1>
+        <h1 className="text-lg font-bold">{user.username}</h1>
         {isSelf && (
           <button onClick={() => setEditing(true)} className="p-2 -mr-2 text-gray-300 hover:text-white">
             <Settings size={24} />
@@ -204,7 +239,7 @@ export default function ProfilePage() {
           <div className="flex items-center space-x-4 mb-4">
             <div className="relative">
               <img
-                src={profile.avatar || `https://i.pravatar.cc/150?u=${profile._id}`}
+                src={user.avatar || `https://i.pravatar.cc/150?u=${user._id}`}
                 alt="Avatar"
                 className="w-24 h-24 rounded-full object-cover border-4 border-gray-800"
               />
@@ -215,19 +250,44 @@ export default function ProfilePage() {
               )}
             </div>
             <div className="flex-1 grid grid-cols-3 gap-2">
-              <StatItem count={profile.followers.length} label="Followers" />
-              <StatItem count={profile.friends.length} label="Friends" />
+              <StatItem count={user.followers.length} label="Followers" />
+              <StatItem count={user.friends.length} label="Friends" />
               <StatItem count={0} label="Posts" />
             </div>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold">{profile.username}</h2>
-            <p className="text-sm text-purple-400 capitalize">{profile.level || "Newbie"}</p>
-            <p className="text-gray-300 mt-2 text-sm">{profile.bio || "No bio yet."}</p>
-            <p className="text-gray-500 mt-1 text-xs italic">
-              "{profile.status || "Hey there! I'm using Arotu."}"
-            </p>
+          <div className="text-center mt-4">
+            <h2 className="text-2xl font-bold">{user.username}</h2>
+            <div className="flex items-center justify-center gap-2 mt-1 text-purple-400">
+              <Award size={16} />
+              <p className="text-sm font-semibold capitalize">{user.level || "Newbie"}</p>
+            </div>
           </div>
+
+          {/* Status */}
+          <div className="my-6 p-4 bg-gradient-to-r from-gray-800/50 to-gray-900/20 rounded-xl text-center relative border border-gray-700 shadow-inner">
+            <Quote className="absolute top-3 left-3 text-gray-600" size={20} />
+            <p className="text-lg italic text-gray-200">
+              {user.status || "Hey there! I'm using Arotu."}
+            </p>
+            <Quote className="absolute bottom-3 right-3 text-gray-600" size={20} transform="scale(-1, -1)" />
+          </div>
+
+          {/* Bio */}
+          {user.bio && (
+            <div className="my-4">
+              <h3 className="font-semibold text-gray-400 mb-2 text-sm uppercase tracking-wider">About Me</h3>
+              <p className="text-gray-300 text-sm leading-relaxed bg-[#1c1c1c] p-3 rounded-lg border border-gray-800">{user.bio}</p>
+            </div>
+          )}
+
+          {/* Details Grid */}
+          <div className="grid grid-cols-2 gap-3 mt-6">
+            {user.location && <ProfileDetailItem icon={<MapPin size={20} />} label="From" text={user.location} />}
+            {user.relationshipStatus && <ProfileDetailItem icon={<Heart size={20} />} label="Relationship" text={user.relationshipStatus} />}
+            {user.gender && <ProfileDetailItem icon={<Users2 size={20} />} label="Gender" text={user.gender} />}
+            {user.lookingFor && <ProfileDetailItem icon={<Binoculars size={20} />} label="Looking For" text={user.lookingFor} />}
+          </div>
+
           {/* If viewing someone else's profile and you are not already friends, show "Make Friend" */}
           {!isSelf && !isFriend && (
             <button onClick={handleMakeFriend} className="mt-4 w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition">
@@ -265,36 +325,102 @@ export default function ProfilePage() {
               exit={{ y: 50, scale: 0.95 }}
               className="relative w-full max-w-md bg-[#1c1c1c] p-6 rounded-2xl shadow-lg border border-gray-700"
             >
-              <div className="flex justify-between items-center mb-4">
+              <div className="flex justify-between items-start mb-4">
                 <h2 className="text-xl font-bold">Edit Profile</h2>
-                <button onClick={() => setEditing(false)} className="p-1 rounded-full hover:bg-gray-700">
+                <button onClick={() => { setEditing(false); setActiveTab("main"); }} className="p-1 -mt-1 -mr-1 rounded-full hover:bg-gray-700">
                   <X size={20} />
                 </button>
               </div>
+
+              {/* Tab Navigation */}
+              <div className="flex border-b border-gray-700 mb-6">
+                {[
+                  { id: "main", label: "Main Info" },
+                  { id: "details", label: "Details" },
+                  { id: "prefs", label: "Preferences" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`capitalize py-2 px-4 text-sm font-medium transition-colors focus:outline-none ${
+                      activeTab === tab.id
+                        ? "border-b-2 border-purple-500 text-white"
+                        : "text-gray-400 hover:text-white border-b-2 border-transparent"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
               {error && <p className="text-red-500 text-center mb-4">{error}</p>}
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <FormInput id="avatar" label="Avatar URL" value={profile.avatar} onChange={handleChange} />
-                <FormInput id="bio" label="Bio" value={profile.bio} onChange={handleChange} type="textarea" rows={3} />
-                <FormInput id="status" label="Status" value={profile.status} onChange={handleChange} />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormSelect id="relationshipStatus" label="Relationship" value={profile.relationshipStatus} onChange={handleChange}>
-                    <option value="single">Single</option>
-                    <option value="taken">Taken</option>
-                    <option value="complicated">It's Complicated</option>
-                  </FormSelect>
-                  <FormSelect id="gender" label="Gender" value={profile.gender} onChange={handleChange}>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </FormSelect>
+              <form onSubmit={handleSubmit}>
+                <div className="min-h-[320px]"> {/* Fixed height to prevent layout shifts */}
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={activeTab}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.2 }}
+                      className="space-y-4"
+                    >
+                      {activeTab === 'main' && (
+                        <>
+                          <FormInput id="avatar" label="Avatar URL" value={user.avatar} onChange={handleChange} placeholder="https://example.com/avatar.png" />
+                          <FormInput id="bio" label="Bio" value={user.bio} onChange={handleChange} type="textarea" rows={3} placeholder="Tell us about yourself..." />
+                          <FormInput id="status" label="Status" value={user.status} onChange={handleChange} placeholder="What's on your mind?" />
+                        </>
+                      )}
+                      {activeTab === 'details' && (
+                        <>
+                          <FormInput id="location" label="Location" value={user.location} onChange={handleChange} placeholder="e.g., Lagos, Nigeria" />
+                          <FormInput id="phone" label="Phone" value={user.phone} onChange={handleChange} type="tel" placeholder="+234..." />
+                          <div className="grid grid-cols-2 gap-4 pt-2">
+                            <FormSelect id="gender" label="Gender" value={user.gender} onChange={handleChange}>
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                              <option value="other">Other</option>
+                            </FormSelect>
+                            <FormSelect id="relationshipStatus" label="Relationship" value={user.relationshipStatus} onChange={handleChange}>
+                              <option value="single">Single</option>
+                              <option value="taken">Taken</option>
+                              <option value="complicated">It's Complicated</option>
+                            </FormSelect>
+                          </div>
+                        </>
+                      )}
+                      {activeTab === 'prefs' && (
+                        <>
+                          <FormInput id="roomNickname" label="Room Nickname" value={user.roomNickname} onChange={handleChange} placeholder="Your nickname in chat rooms" />
+                          <div className="grid grid-cols-2 gap-4 pt-2">
+                            <FormSelect id="lookingFor" label="Looking For" value={user.lookingFor} onChange={handleChange}>
+                              <option value="friendship">Friendship</option>
+                              <option value="dating">Dating</option>
+                              <option value="networking">Networking</option>
+                              <option value="not-looking">Not Looking</option>
+                            </FormSelect>
+                            <FormSelect id="level" label="Level" value={user.level} onChange={handleChange}>
+                              <option value="jjc">JJC</option>
+                              <option value="newbie">Newbie</option>
+                              <option value="intermediate">Intermediate</option>
+                              <option value="pro">Pro</option>
+                              <option value="expert">Expert</option>
+                            </FormSelect>
+                          </div>
+                        </>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
                 </div>
-                <div className="flex justify-end items-center pt-2">
+                <div className="flex justify-end items-center pt-4 mt-4 border-t border-gray-700/50">
                   <button
                     type="submit"
                     disabled={loading}
                     className="px-6 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold rounded-md hover:opacity-90 transition disabled:opacity-50"
                   >
-                    {loading ? "Saving..." : "Save"}
+                    {loading ? "Saving..." : "Save Changes"}
                   </button>
                 </div>
               </form>

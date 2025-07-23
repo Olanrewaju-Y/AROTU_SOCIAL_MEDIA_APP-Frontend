@@ -124,6 +124,12 @@ const RoomsPage = ({ userId }) => {
   }, [selectedRoom, userId]);
 
   // (Optionally) remove any duplicate join-room useEffect if present
+  // useEffect(() => {
+  //   if (!socket || !selectedRoom?._id) return;
+  //   socket.emit('join-room', selectedRoom._id);
+  //   return () => {};
+  // }, [selectedRoom]);
+
 
   // Updated handleSendMessage
   const handleSendMessage = async () => {

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Globe, Users, Lock, Link as LinkIcon, PlusCircle } from 'lucide-react';
 
 const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) => {
-  const [roomData, setRoomData] = useState({
+  const [room, setRoom] = useState({
     name: '',
     description: '',
     avatar: '',
@@ -13,25 +13,26 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
     isPrivate: false,
     parentRoom: '', // This might be a dropdown of existing rooms or left empty
     type: 'main', // 'main' or 'sub'
+    creator: '', // This should be set to the current user's ID or username  
   });
   const [formError, setFormError] = useState(null);
 
   const handleChange = (e) => {
     const { id, value, type, checked } = e.target;
-    setRoomData((prev) => ({
+    setRoom((prev) => ({
       ...prev,
       [id]: type === 'checkbox' ? checked : value,
     }));
 
     // Logic for isPublic/isPrivate toggle
     if (id === 'isPublic') {
-      setRoomData((prev) => ({
+      setRoom((prev) => ({
         ...prev,
         isPrivate: !checked, // If public is checked, private is unchecked
         password: checked ? '' : prev.password, // Clear password if public
       }));
     } else if (id === 'isPrivate') {
-      setRoomData((prev) => ({
+      setRoom((prev) => ({
         ...prev,
         isPublic: !checked, // If private is checked, public is unchecked
         password: checked ? prev.password : '', // Clear password if not private
@@ -41,19 +42,19 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
 
   const handleSubmit = async () => {
     setFormError(null);
-    if (!roomData.name.trim()) {
+    if (!room.name.trim()) {
       setFormError("Room name is required.");
       return;
     }
-    if (roomData.isPrivate && !roomData.password.trim()) {
+    if (room.isPrivate && !room.password.trim()) {
       setFormError("Password is required for private rooms.");
       return;
     }
 
     // Call the onCreateRoom function passed from the parent
-    await onCreateRoom(roomData);
+    await onCreateRoom(room);
     if (!error) { // Only clear form if no error from API
-      setRoomData({
+      setRoom({
         name: '',
         description: '',
         avatar: '',
@@ -62,6 +63,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
         isPrivate: false,
         parentRoom: '',
         type: 'main',
+        creator: '', // Assuming creator is set elsewhere, e.g., from user context
       });
       onClose();
     }
@@ -97,7 +99,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                 <input
                   type="text"
                   id="name"
-                  value={roomData.name}
+                  value={room.name}
                   onChange={handleChange}
                   placeholder="e.g., General Chat, Study Group"
                   className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
@@ -108,7 +110,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                 <textarea
                   id="description"
                   rows="3"
-                  value={roomData.description}
+                  value={room.description}
                   onChange={handleChange}
                   placeholder="A brief description of the room's purpose"
                   className="w-full p-3 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
@@ -119,7 +121,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                 <input
                   type="url"
                   id="avatar"
-                  value={roomData.avatar}
+                  value={room.avatar}
                   onChange={handleChange}
                   placeholder="https://example.com/room-icon.png"
                   className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
@@ -131,7 +133,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                   <input
                     type="checkbox"
                     id="isPublic"
-                    checked={roomData.isPublic}
+                    checked={room.isPublic}
                     onChange={handleChange}
                     className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-600 rounded"
                   />
@@ -143,7 +145,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                   <input
                     type="checkbox"
                     id="isPrivate"
-                    checked={roomData.isPrivate}
+                    checked={room.isPrivate}
                     onChange={handleChange}
                     className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-600 rounded"
                   />
@@ -153,13 +155,13 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                 </div>
               </div>
 
-              {roomData.isPrivate && (
+              {room.isPrivate && (
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">Password *</label>
                   <input
                     type="password"
                     id="password"
-                    value={roomData.password}
+                    value={room.password}
                     onChange={handleChange}
                     placeholder="Enter password for private room"
                     className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
@@ -171,7 +173,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
                 <label htmlFor="type" className="block text-sm font-medium text-gray-300 mb-1">Room Type</label>
                 <select
                   id="type"
-                  value={roomData.type}
+                  value={room.type}
                   onChange={handleChange}
                   className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
                 >
@@ -181,13 +183,13 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
               </div>
 
               {/* Parent Room selection - This would ideally be a dropdown of existing main rooms */}
-              {roomData.type === 'sub' && (
+              {room.type === 'sub' && (
                 <div>
                   <label htmlFor="parentRoom" className="block text-sm font-medium text-gray-300 mb-1">Parent Room ID (for sub-rooms)</label>
                   <input
                     type="text" // Or a select/dropdown populated by main rooms
                     id="parentRoom"
-                    value={roomData.parentRoom}
+                    value={room.parentRoom}
                     onChange={handleChange}
                     placeholder="Enter Parent Room ID"
                     className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"

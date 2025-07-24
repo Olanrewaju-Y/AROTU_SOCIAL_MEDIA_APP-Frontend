@@ -51,7 +51,8 @@ const PostCard = ({
             />
             <div className="flex flex-col">
               <span className="font-semibold text-sm text-white">
-                {post.user?.username || "Anonymous"}
+                {/* {post.user?.username || "Anonymous"} */}
+                {post.user?.username ? post.user?.username : 'Anonymous'}
               </span>
               <p className="text-xs text-gray-500">
                 {new Date(post.createdAt).toLocaleString()}
@@ -224,7 +225,8 @@ const PostCard = ({
                       <div className="flex-1 bg-gray-800/50 rounded-lg p-2">
                         <div className="flex justify-between items-center">
                           <p className="text-sm font-semibold text-white">
-                            {comment.user?.username || "Anonymous"}
+                            {/* {comment.user?.username || "Anonymous"} */}
+                           {comment.user?.username ? comment.user?.username : 'Anonymous'}
                           </p>
                           {comment.user?._id === currentUserId && (
                             <button

@@ -30,7 +30,6 @@ const MessageBubble = ({ msg, userId }) => {
       }`}
     >
       <img
-        // Ensure msg.sender.avatar is available. If not, use a fallback
         src={msg.sender.avatar || `https://i.pravatar.cc/150?u=${msg.sender._id}`}
         alt={msg.sender.username}
         className="w-8 h-8 rounded-full object-cover"
@@ -51,7 +50,10 @@ const MessageBubble = ({ msg, userId }) => {
   );
 };
 
-const RoomsPage = ({ userId }) => {
+const RoomsPage = () => {
+  const user = JSON.parse(localStorage.getItem("user"));
+  const userId = user?._id;
+
   const [rooms, setRooms] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -88,7 +90,6 @@ const RoomsPage = ({ userId }) => {
     fetchRooms();
   }, []);
 
-  // Updated handleRoomSelect
   const handleRoomSelect = async (room) => {
     if (selectedRoom?._id !== room._id) {
       socket.emit('join-room', room._id);
@@ -106,13 +107,11 @@ const RoomsPage = ({ userId }) => {
     }
   };
 
-  // Updated incoming message listener
   useEffect(() => {
     if (!socket || !selectedRoom?._id) return;
 
     const handleIncomingMessage = (message) => {
       const senderId = message.sender?._id || message.sender;
-      // Do not append if it's the current user's message
       if (String(senderId) === String(userId)) return;
       if (message.room === selectedRoom._id) {
         setMessages((prev) => [...prev, message]);
@@ -123,15 +122,6 @@ const RoomsPage = ({ userId }) => {
     return () => socket.off('receive-room', handleIncomingMessage);
   }, [selectedRoom, userId]);
 
-  // (Optionally) remove any duplicate join-room useEffect if present
-  // useEffect(() => {
-  //   if (!socket || !selectedRoom?._id) return;
-  //   socket.emit('join-room', selectedRoom._id);
-  //   return () => {};
-  // }, [selectedRoom]);
-
-
-  // Updated handleSendMessage
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedRoom) return;
     try {
@@ -143,7 +133,6 @@ const RoomsPage = ({ userId }) => {
       );
       const savedMessage = res.data;
 
-      // Manually emit the socket message
       socket.emit('room-message', {
         sender: userId,
         roomId: selectedRoom._id,
@@ -165,6 +154,10 @@ const RoomsPage = ({ userId }) => {
     }
   };
 
+  if (!userId) {
+    return <div className="text-center text-red-500 p-4">You are not logged in.</div>;
+  }
+
   return (
     <div className="bg-black text-gray-100 font-sans h-screen flex flex-col">
       <AnimatePresence>
@@ -183,7 +176,7 @@ const RoomsPage = ({ userId }) => {
               </button>
               <div className="text-center">
                 <h2 className="font-bold text-lg">{selectedRoom.name}</h2>
-                <p className="text-xs text-gray-400">24 members, 7 online</p> {/* This data needs to come from backend */}
+                <p className="text-xs text-gray-400">24 members, 7 online</p>
               </div>
               <button className="p-2 -mr-2">
                 <MoreVertical size={24} />
@@ -194,7 +187,7 @@ const RoomsPage = ({ userId }) => {
               {loading && <p className="text-center text-gray-400">Loading messages...</p>}
               {error && <p className="text-center text-red-500">{error}</p>}
               {!loading && messages.map((msg) => (
-                <MessageBubble key={msg._id || Math.random()} msg={msg} userId={userId} /> // Added fallback key
+                <MessageBubble key={msg._id || Math.random()} msg={msg} userId={userId} />
               ))}
               <div ref={messagesEndRef} />
             </main>
@@ -259,10 +252,10 @@ const RoomsPage = ({ userId }) => {
                   <div className="flex-1">
                     <div className="flex justify-between items-baseline">
                       <h3 className="font-semibold">{room.name}</h3>
-                      <p className="text-xs text-gray-500">3:45 PM</p> {/* This timestamp is static, should come from room.lastMessage.createdAt */}
+                      <p className="text-xs text-gray-500">3:45 PM</p>
                     </div>
                     <p className="text-sm text-gray-400 truncate">
-                      {room.lastMessage?.text || 'No messages yet...'} {/* Access lastMessage.text */}
+                      {room.description?.trim() ? room.description : 'No description, do as you like...'}
                     </p>
                   </div>
                 </motion.div>

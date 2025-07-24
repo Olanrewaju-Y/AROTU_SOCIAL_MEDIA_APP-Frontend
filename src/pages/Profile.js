@@ -84,7 +84,9 @@ const FormSelect = ({ id, label, value, onChange, children }) => (
 export default function ProfilePage() {
   const { id } = useParams(); // if provided, viewing another user's profile
   const navigate = useNavigate();
-  const localUserId = localStorage.getItem("userId");
+  const localUser = JSON.parse(localStorage.getItem("user"));
+  const localUserId = localUser?._id;
+
   
   const [user, setUser] = useState({
     username: "",

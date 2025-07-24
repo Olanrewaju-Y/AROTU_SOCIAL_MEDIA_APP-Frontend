@@ -1,33 +1,24 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+// src/pages/HomePage.js (Updated)
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import MobileNavbar, { TopHeader } from "../components/Navbar";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Heart,
-  MessageCircle,
-  Send,
-  MoreHorizontal,
-  UserPlus,
-  Image as ImageIcon,
-  Globe,
-  Users,
-  UserCheck,
-  X,
-  Bookmark, // Added for bookmarking
-  Repeat2, // Added for reposting
-  Search, // Added for search
-  Edit, // Added for editing
-  Trash2, // Added for deleting
-} from "lucide-react";
+import { motion } from "framer-motion";
 import axios from "axios";
 
+// Import the new components
+import PostCategories from "../components/PostCategories";
+import CreatePostTrigger from "../components/CreatePostTrigger";
+import CreatePostModal from "../components/CreatePostModal";
+import EditPostModal from "../components/EditPostModal";
+import SearchResultsModal from "../components/SearchResultsModal";
+import PostCard from "../components/PostCard";
+
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
-// Adjusted categories to better map to your endpoints
 const navCategories = ["For You", "Following", "My Posts"];
 
 export default function HomePage() {
   const [posts, setPosts] = useState([]);
-  const [activeCategory, setActiveCategory] = useState("For You"); // 'For You' maps to getAllPosts
+  const [activeCategory, setActiveCategory] = useState("For You");
   const [loading, setLoading] = useState(true);
   const [postLoading, setPostLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -60,8 +51,17 @@ export default function HomePage() {
   });
 
   const currentUser = JSON.parse(localStorage.getItem("user"));
-  const currentUserId = localStorage.getItem("userId");
-  const token = localStorage.getItem("token"); // Get token once
+  const currentUserId = currentUser?._id || "defaultUserId"; // Fallback for demo purposes
+  if (!currentUserId) {
+    console.error("No current user found, redirecting to login.");
+    // <Navigate to="/login" replace />;
+  }
+  if (!currentUser) {
+    console.error("No current user found, redirecting to login.");
+    // <Navigate to="/login" replace />;
+  }
+  // Get token from localStorage for authenticated requests
+  const token = localStorage.getItem("token");
 
   const navigate = useNavigate();
 
@@ -106,7 +106,7 @@ export default function HomePage() {
     };
 
     fetchPosts();
-  }, [activeCategory, token, navigate]); // Depend on token and navigate for re-fetching or redirection
+  }, [activeCategory, token, navigate]);
 
   // Handle changes for new post form
   const handleNewPostChange = (e) => {
@@ -182,7 +182,7 @@ export default function HomePage() {
     setError(null);
     try {
       const res = await axios.put(
-        `${BASE_URL}/api/posts/${editPostData._id}`,
+        `${BASE_URL}/api/posts/${editPostData._id}/settings`,
         {
           content: editPostData.content,
           image: editPostData.image,
@@ -204,7 +204,7 @@ export default function HomePage() {
 
   // Delete a post using DELETE '/posts/:id'
   const handleDeletePost = async (postId) => {
-    if (!window.confirm("Are you sure you want to delete this post?")) return;
+    if (!window.confirm("Are you sure you want to delete this post?" )) return;
 
     const headers = getAuthHeaders();
     if (!headers) return;
@@ -427,292 +427,47 @@ export default function HomePage() {
     <div className="bg-black text-gray-100 font-sans min-h-screen">
       <TopHeader />
       <main className="pt-16 pb-20">
-        <section className="sticky top-16 z-40 bg-black/80 backdrop-blur-md border-b border-gray-800">
-          <div className="flex justify-around items-center h-12 text-sm font-semibold text-gray-400">
-            {navCategories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setActiveCategory(category)}
-                className={`py-2 px-3 border-b-2 transition-all duration-300 ${
-                  activeCategory === category
-                    ? "border-purple-500 text-white"
-                    : "border-transparent hover:text-white"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          {/* Search Bar */}
-          <form onSubmit={handleSearchSubmit} className="p-3 border-t border-gray-800">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search posts..."
-                value={searchQuery}
-                onChange={handleSearchChange}
-                className="w-full pl-10 pr-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-full focus:ring-purple-500 focus:border-purple-500 transition"
-              />
-              <Search
-                size={20}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <button type="submit" className="sr-only">Search</button>
-            </div>
-          </form>
-        </section>
+        <PostCategories
+          activeCategory={activeCategory}
+          setActiveCategory={setActiveCategory}
+          searchQuery={searchQuery}
+          handleSearchChange={handleSearchChange}
+          handleSearchSubmit={handleSearchSubmit}
+          navCategories={navCategories}
+        />
 
-        {/* Create Post Trigger */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex items-center space-x-3">
-            <img
-              src={
-                currentUser?.avatar ||
-                `https://i.pravatar.cc/150?u=${currentUserId}`
-              }
-              alt="Your avatar"
-              className="w-10 h-10 rounded-full object-cover"
-            />
-            <div
-              onClick={() => setIsCreatingPost(true)}
-              className="flex-1 text-gray-500 bg-[#1a1a1a] rounded-full py-2 px-4 cursor-pointer hover:bg-gray-800 transition-colors"
-            >
-              What's on your mind?
-            </div>
-            <button
-              onClick={() => setIsCreatingPost(true)}
-              className="p-2 rounded-full hover:bg-gray-800"
-              aria-label="Create a post with an image"
-            >
-              <ImageIcon size={24} className="text-purple-500" />
-            </button>
-          </div>
-        </div>
+        <CreatePostTrigger
+          setIsCreatingPost={setIsCreatingPost}
+          currentUser={currentUser}
+          currentUserId={currentUserId}
+        />
 
-        {/* Create Post Modal */}
-        <AnimatePresence>
-          {isCreatingPost && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            >
-              <motion.div
-                initial={{ y: 50, scale: 0.95 }}
-                animate={{ y: 0, scale: 1 }}
-                exit={{ y: 50, scale: 0.95 }}
-                className="relative w-full max-w-lg bg-[#262626] p-6 rounded-2xl shadow-lg border border-gray-700/50"
-              >
-                <button
-                  onClick={() => setIsCreatingPost(false)}
-                  className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-700"
-                >
-                  <X size={24} />
-                </button>
-                <h2 className="text-2xl font-bold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">
-                  Create Post
-                </h2>
-                <div className="space-y-4">
-                  <textarea
-                    id="content"
-                    rows="5"
-                    value={newPostData.content}
-                    onChange={handleNewPostChange}
-                    placeholder="Share your thoughts..."
-                    className={`w-full p-3 bg-[#1a1a1a] border rounded-lg focus:ring-orange-500 focus:border-orange-500 transition ${
-                      newPostData.content.length > 300
-                        ? "border-red-500"
-                        : "border-gray-600"
-                    }`}
-                  />
-                  <p
-                    className={`text-sm text-right ${
-                      newPostData.content.length > 300
-                        ? "text-red-500"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    {newPostData.content.length}/300
-                  </p>
-                  <input
-                    type="url"
-                    id="image"
-                    value={newPostData.image}
-                    onChange={handleNewPostChange}
-                    placeholder="Image URL (optional)"
-                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-orange-500 focus:border-orange-500 transition"
-                  />
-                  <select
-                    id="visibility"
-                    value={newPostData.visibility}
-                    onChange={handleNewPostChange}
-                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-orange-500 focus:border-orange-500 transition"
-                  >
-                    <option value="public">Public</option>
-                    <option value="friends">Friends Only</option>
-                    <option value="followers">Followers Only</option>
-                  </select>
-                  {error && (
-                    <p className="text-red-500 text-sm text-center">
-                      {error}
-                    </p>
-                  )}
-                  <button
-                    onClick={handleCreatePost}
-                    disabled={postLoading}
-                    className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50"
-                  >
-                    {postLoading ? "Posting..." : "Post"}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <CreatePostModal
+          isCreatingPost={isCreatingPost}
+          setIsCreatingPost={setIsCreatingPost}
+          newPostData={newPostData}
+          handleNewPostChange={handleNewPostChange}
+          handleCreatePost={handleCreatePost}
+          postLoading={postLoading}
+          error={error}
+        />
 
-        {/* Edit Post Modal */}
-        <AnimatePresence>
-          {isEditingPost && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            >
-              <motion.div
-                initial={{ y: 50, scale: 0.95 }}
-                animate={{ y: 0, scale: 1 }}
-                exit={{ y: 50, scale: 0.95 }}
-                className="relative w-full max-w-lg bg-[#262626] p-6 rounded-2xl shadow-lg border border-gray-700/50"
-              >
-                <button
-                  onClick={() => setIsEditingPost(false)}
-                  className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-700"
-                >
-                  <X size={24} />
-                </button>
-                <h2 className="text-2xl font-bold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-teal-500">
-                  Edit Post
-                </h2>
-                <div className="space-y-4">
-                  <textarea
-                    id="content"
-                    rows="5"
-                    value={editPostData.content}
-                    onChange={handleEditPostChange}
-                    placeholder="Edit your thoughts..."
-                    className={`w-full p-3 bg-[#1a1a1a] border rounded-lg focus:ring-teal-500 focus:border-teal-500 transition ${
-                      editPostData.content.length > 300
-                        ? "border-red-500"
-                        : "border-gray-600"
-                    }`}
-                  />
-                  <p
-                    className={`text-sm text-right ${
-                      editPostData.content.length > 300
-                        ? "text-red-500"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    {editPostData.content.length}/300
-                  </p>
-                  <input
-                    type="url"
-                    id="image"
-                    value={editPostData.image}
-                    onChange={handleEditPostChange}
-                    placeholder="Image URL (optional)"
-                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-teal-500 focus:border-teal-500 transition"
-                  />
-                  <select
-                    id="visibility"
-                    value={editPostData.visibility}
-                    onChange={handleEditPostChange}
-                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-teal-500 focus:border-teal-500 transition"
-                  >
-                    <option value="public">Public</option>
-                    <option value="friends">Friends Only</option>
-                    <option value="followers">Followers Only</option>
-                  </select>
-                  {error && (
-                    <p className="text-red-500 text-sm text-center">
-                      {error}
-                    </p>
-                  )}
-                  <button
-                    onClick={handleUpdatePost}
-                    disabled={postLoading}
-                    className="w-full bg-gradient-to-r from-green-500 to-teal-500 text-white font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50"
-                  >
-                    {postLoading ? "Updating..." : "Update Post"}
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <EditPostModal
+          isEditingPost={isEditingPost}
+          setIsEditingPost={setIsEditingPost}
+          editPostData={editPostData}
+          handleEditPostChange={handleEditPostChange}
+          handleUpdatePost={handleUpdatePost}
+          postLoading={postLoading}
+          error={error}
+        />
 
-        {/* Search Results Modal */}
-        <AnimatePresence>
-          {showSearchModal && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            >
-              <motion.div
-                initial={{ y: 50, scale: 0.95 }}
-                animate={{ y: 0, scale: 1 }}
-                exit={{ y: 50, scale: 0.95 }}
-                className="relative w-full max-w-2xl bg-[#262626] p-6 rounded-2xl shadow-lg border border-gray-700/50 max-h-[80vh] overflow-y-auto"
-              >
-                <button
-                  onClick={() => setShowSearchModal(false)}
-                  className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-700"
-                >
-                  <X size={24} />
-                </button>
-                <h2 className="text-2xl font-bold text-center mb-4 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-500">
-                  Search Results for "{searchQuery}"
-                </h2>
-                {searchResults.length === 0 ? (
-                  <p className="text-center text-gray-400 py-10">No posts found for your search.</p>
-                ) : (
-                  <div className="space-y-4">
-                    {searchResults.map((post) => (
-                      <div key={post._id} className="bg-[#1a1a1a] rounded-lg p-4 shadow-md">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <img
-                            src={post.user?.avatar || `https://i.pravatar.cc/150?u=${post.user?._id}`}
-                            alt={post.user?.username}
-                            className="w-8 h-8 rounded-full object-cover"
-                          />
-                          <span className="font-semibold text-sm text-white">
-                            {post.user?.username || "Anonymous"}
-                          </span>
-                        </div>
-                        <p className="whitespace-pre-line text-gray-300 text-sm leading-relaxed mb-2">
-                          {post.content}
-                        </p>
-                        {post.image && (
-                          <img src={post.image} alt="Post content" className="rounded-lg mt-2 w-full object-cover max-h-48" />
-                        )}
-                        <div className="flex items-center space-x-4 mt-3 text-gray-400 text-xs">
-                          <span className="flex items-center"><Heart size={16} className="mr-1" /> {post.likes?.length || 0}</span>
-                          <span className="flex items-center"><MessageCircle size={16} className="mr-1" /> {post.comments?.length || 0}</span>
-                          {/* Add other actions like repost, bookmark for search results if desired */}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
+        <SearchResultsModal
+          showSearchModal={showSearchModal}
+          setShowSearchModal={setShowSearchModal}
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+        />
 
         {/* Feed Posts */}
         <div className="mt-1">
@@ -736,240 +491,27 @@ export default function HomePage() {
             </div>
           )}
           {!loading &&
-            posts.map((post, i) => (
-              <motion.article
-                key={post._id || i}
-                className="bg-[#121212] border-b border-gray-800"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-              >
-                <div className="p-4">
-                  {/* Post Header */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <img
-                        src={
-                          post.user?.avatar ||
-                          `https://i.pravatar.cc/150?u=${post.user?._id}`
-                        }
-                        alt={post.user?.username}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-sm text-white">
-                          {post.user?.username || "Anonymous"}
-                        </span>
-                        <p className="text-xs text-gray-500">
-                          {new Date(post.createdAt).toLocaleString()}
-                        </p>
-                      </div>
-                      {/* Follow Icon: Only show if the post author is not you */}
-                      {post.user?._id !== currentUserId && (
-                        <button
-                          onClick={() => handleFollowUser(post.user?._id)} // Corrected to post.user?._id
-                          className="ml-2 text-gray-400 hover:text-purple-500 transition-colors"
-                          title="Follow user"
-                        >
-                          <UserPlus size={18} />
-                        </button>
-                      )}
-                    </div>
-                    {/* More options button (for edit/delete) */}
-                    {post.user?._id === currentUserId && (
-                      <div className="relative">
-                        <button
-                          onClick={() => handleToggleMenu(post._id)}
-                          className="p-1 rounded-full hover:bg-gray-800"
-                        >
-                          <MoreHorizontal size={20} />
-                        </button>
-                        <AnimatePresence>
-                          {openMenuId === post._id && (
-                            <motion.div
-                              initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                              transition={{ duration: 0.15 }}
-                              className="absolute right-0 mt-2 w-32 bg-gray-800 rounded-md shadow-lg py-1 z-20 origin-top-right"
-                            >
-                              <button
-                                onClick={() => {
-                                  openEditPostModal(post);
-                                  setOpenMenuId(null); // Close menu
-                                }}
-                                className="flex items-center px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 w-full text-left"
-                              >
-                                <Edit size={16} className="mr-2" /> Edit
-                              </button>
-                              <button
-                                onClick={() => {
-                                  handleDeletePost(post._id);
-                                  setOpenMenuId(null); // Close menu
-                                }}
-                                className="flex items-center px-4 py-2 text-sm text-red-400 hover:bg-gray-700 w-full text-left"
-                              >
-                                <Trash2 size={16} className="mr-2" /> Delete
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </div>
-                  {/* Post Content */}
-                  <p className="whitespace-pre-line text-gray-300 text-sm leading-relaxed mb-3">
-                    {post.content}
-                  </p>
-                  {post.image && (
-                    <img
-                      src={post.image}
-                      alt="Post content"
-                      className="rounded-lg mt-2 w-full object-cover"
-                    />
-                  )}
-                  {/* Post Actions */}
-                  <div className="flex items-center justify-between pt-3 text-gray-400">
-                    <div className="flex items-center space-x-5">
-                      <button
-                        onClick={() => handleToggleLike(post._id)}
-                        className="flex items-center space-x-1.5 group"
-                      >
-                        <Heart
-                          size={22}
-                          className={`group-hover:text-red-500 transition-colors ${
-                            post.likes?.includes(currentUserId)
-                              ? "text-red-500 fill-current"
-                              : ""
-                          }`}
-                        />
-                        <span className="text-xs font-semibold">
-                          {post.likes?.length || 0}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => handleToggleCommentSection(post._id)}
-                        className="flex items-center space-x-1.5 group"
-                      >
-                        <MessageCircle
-                          size={22}
-                          className="group-hover:text-blue-400 transition-colors"
-                        />
-                        <span className="text-xs font-semibold">
-                          {post.comments?.length || 0}
-                        </span>
-                      </button>
-                      <button onClick={() => handleRepost(post._id)} className="group">
-                        <Repeat2
-                          size={22}
-                          className="group-hover:text-green-400 transition-colors"
-                        />
-                      </button>
-                      <button onClick={() => handleBookmarkPost(post._id)} className="group">
-                        <Bookmark
-                          size={22}
-                          className="group-hover:text-yellow-400 transition-colors"
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {/* Comment Section */}
-                <AnimatePresence>
-                  {expandedPostId === post._id && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.3, ease: "easeInOut" }}
-                      className="overflow-hidden"
-                    >
-                      <div className="border-t border-gray-800 px-4 pt-3 pb-2">
-                        {/* Comment Input */}
-                        <div className="flex items-center gap-2 mb-4">
-                          <img
-                            src={
-                              currentUser?.avatar ||
-                              `https://i.pravatar.cc/150?u=${currentUserId}`
-                            }
-                            alt="Your avatar"
-                            className="w-8 h-8 rounded-full object-cover"
-                          />
-                          <div className="flex-1 flex items-center bg-[#1a1a1a] rounded-full">
-                            <input
-                              type="text"
-                              placeholder="Add a comment..."
-                              value={commentInputs[post._id] || ""}
-                              onChange={(e) =>
-                                handleCommentInputChange(post._id, e.target.value)
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  handleAddComment(post._id);
-                                }
-                              }}
-                              className="w-full bg-transparent px-4 py-2 text-sm focus:outline-none"
-                            />
-                            <button
-                              onClick={() => handleAddComment(post._id)}
-                              disabled={!commentInputs[post._id]?.trim()}
-                              className="p-2 text-purple-500 hover:text-purple-400 disabled:text-gray-600 disabled:cursor-not-allowed"
-                            >
-                              <Send size={20} />
-                            </button>
-                          </div>
-                        </div>
-                        {/* Comments List */}
-                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                          {post.comments && post.comments.length > 0 ? (
-                            post.comments.map((comment) => (
-                              <div key={comment._id} className="flex items-start gap-2">
-                                <img
-                                  src={
-                                    comment.user?.avatar ||
-                                    `https://i.pravatar.cc/150?u=${comment.user?._id}`
-                                  }
-                                  alt={comment.user?.username}
-                                  className="w-8 h-8 rounded-full object-cover mt-1"
-                                />
-                                <div className="flex-1 bg-gray-800/50 rounded-lg p-2">
-                                  <div className="flex justify-between items-center">
-                                    <p className="text-sm font-semibold text-white">
-                                      {comment.user?.username || "Anonymous"}
-                                    </p>
-                                    {comment.user?._id === currentUserId && (
-                                      <button
-                                        onClick={() =>
-                                          handleDeleteComment(
-                                            post._id,
-                                            comment._id
-                                          )
-                                        }
-                                        className="text-red-400 hover:text-red-500 p-1 rounded-full hover:bg-gray-700"
-                                        title="Delete comment"
-                                      >
-                                        <Trash2 size={14} />
-                                      </button>
-                                    )}
-                                  </div>
-                                  <p className="text-sm text-gray-300">
-                                    {comment.text}
-                                  </p>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-xs text-gray-500 text-center py-2">
-                              No comments yet. Be the first to comment!
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.article>
+            posts.map((post) => (
+              <PostCard
+                key={post._id}
+                post={post}
+                currentUserId={currentUserId}
+                currentUser={currentUser} // Pass currentUser for comment input avatar
+                handleFollowUser={handleFollowUser}
+                handleToggleLike={handleToggleLike}
+                handleToggleCommentSection={handleToggleCommentSection}
+                handleRepost={handleRepost}
+                handleBookmarkPost={handleBookmarkPost}
+                openEditPostModal={openEditPostModal}
+                handleDeletePost={handleDeletePost}
+                expandedPostId={expandedPostId}
+                commentInputs={commentInputs}
+                handleCommentInputChange={handleCommentInputChange}
+                handleAddComment={handleAddComment}
+                handleDeleteComment={handleDeleteComment}
+                openMenuId={openMenuId}
+                handleToggleMenu={handleToggleMenu}
+              />
             ))}
         </div>
       </main>

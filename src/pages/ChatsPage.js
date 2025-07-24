@@ -63,7 +63,8 @@ function ChatsPage() {
 
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
-  const currentUserId = localStorage.getItem("userId");
+  const currentUser = JSON.parse(localStorage.getItem("user"));
+  const currentUserId = currentUser?._id;
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {

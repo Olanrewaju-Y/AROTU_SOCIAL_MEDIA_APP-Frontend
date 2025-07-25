@@ -34,12 +34,10 @@ const MessageBubble = ({ msg, userId }) => {
 
       {/* Message Content */}
       <div className="flex flex-col">
-        {/* Sender Name (only for messages from others) */}
-        {!isCurrentUser && (
-          <p className="text-xs text-gray-400 mb-1 px-1 font-semibold">
-            {msg.sender.username || 'Anonymous'} {/* Added fallback for username */}
-          </p>
-        )}
+        {/* Sender Name: Always display the sender's username */}
+        <p className={`text-xs text-gray-400 mb-1 px-1 font-semibold ${isCurrentUser ? 'text-right' : 'text-left'}`}>
+          {msg.sender.username || 'Anonymous'} {/* Added fallback for username */}
+        </p>
         <div
           className={`p-3 rounded-2xl shadow-md ${
             isCurrentUser

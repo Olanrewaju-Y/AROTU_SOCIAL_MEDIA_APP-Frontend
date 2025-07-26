@@ -2,54 +2,68 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, MoreVertical, Send, Search } from 'lucide-react';
+import { ArrowLeft, MoreVertical, Send, PlusCircle, Link as LinkIcon } from 'lucide-react';
 import MobileNavbar from "../components/Navbar";
+import CreateRoomModal from '../components/CreateRoomModal'; // Import the new modal
+
 
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 const socket = io(BASE_URL, { transports: ['websocket'] });
 
-const MessageBubble = ({ msg, userId }) => {
-  const isCurrentUser = String(msg.sender?._id) === String(userId);
 
-  if (!msg.sender) {
+const MessageBubble = ({ msg, userId }) => {
+  // Defensive check: If msg or msg.sender is undefined/null, render as a system message.
+  if (!msg || !msg.sender) {
     return (
-      <div className="text-center text-xs text-gray-500 py-2">
-        <span>{msg.text}</span>
+      <div className="text-center text-xs text-gray-500 py-2 w-full">
+        {/* Use optional chaining for msg.text in case msg itself is null/undefined */}
+        <span>{msg?.text || "Unknown message"}</span>
       </div>
     );
   }
-
+  const isCurrentUser = String(msg.sender?._id) === String(userId);
+  
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      layout // Enables smooth layout transitions for new messages
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
       className={`flex items-end gap-2 max-w-[80%] ${
         isCurrentUser ? 'self-end flex-row-reverse' : 'self-start'
       }`}
     >
+      {/* Avatar */}
       <img
-        // Ensure msg.sender.avatar is available. If not, use a fallback
-        src={msg.sender.avatar || `https://i.pravatar.cc/150?u=${msg.sender._id}`}
-        alt={msg.sender.username}
-        className="w-8 h-8 rounded-full object-cover"
+        // src={msg.sender?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.sender.avatar || 'Guest')}&background=random&color=fff`}
+         src={msg?.avatar || `https://i.pravatar.cc/150?u=${msg.sender._id}`}        
+
+        alt={msg.sender.username || 'User'} // Added fallback for username
+        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
       />
-      <div
-        className={`p-3 rounded-2xl ${
-          isCurrentUser
-            ? 'bg-purple-600 rounded-br-none'
-            : 'bg-gray-800 rounded-bl-none'
-        }`}
-      >
-        <p className="text-sm">{msg.text}</p>
-        <p className={`text-xs mt-1 ${isCurrentUser ? 'text-purple-200' : 'text-gray-400'}`}>
-          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+
+      {/* Message Content */}
+      <div className="flex flex-col">        
+        <div
+          className={`p-3 rounded-2xl shadow-md ${
+            isCurrentUser
+              ? 'bg-purple-600 rounded-br-none' // Current user: purple, no bottom-right radius
+              : 'bg-gray-800 rounded-bl-none' // Other user: gray, no bottom-left radius
+          }`}
+        >
+          {/* Sender Name: Always display the sender's username */}
+        <p className={`text-xs text-gray-400 mb-1 px-1 font-bold ${isCurrentUser ? 'text-right' : 'text-left'}`}>
+          {msg.sender.username || 'Anonymous'} {/* Added fallback for username */}
         </p>
+          <p className="text-sm text-white break-words">{msg.text}</p>
+          <p className={`text-xs mt-1 text-right ${isCurrentUser ? 'text-purple-200' : 'text-gray-400'}`}>
+            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
       </div>
     </motion.div>
   );
-};
+};  
 
 const RoomsPage = ({ userId }) => {
   const [rooms, setRooms] = useState([]);
@@ -58,8 +72,12 @@ const RoomsPage = ({ userId }) => {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const messagesEndRef = useRef(null);
-
+  const [showCreateRoomModal, setShowCreateRoomModal] = useState(false); // New state for modal 
+   const [createRoomLoading, setCreateRoomLoading] = useState(false); // Loading state for room creation
+   const [createRoomError, setCreateRoomError] = useState(null); // Error state for room creation
+ 
+   const messagesEndRef = useRef(null);
+ 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -67,6 +85,17 @@ const RoomsPage = ({ userId }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  /**
+   * @returns {object|null} The authorization headers object or null if token is not found.
+   */
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      return { Authorization: `Bearer ${token}` };
+    }
+    return null;
+  };
 
   useEffect(() => {
     const fetchRooms = async () => {
@@ -140,6 +169,7 @@ const RoomsPage = ({ userId }) => {
       // Manually emit the socket message
       socket.emit('room-message', {
         sender: userId,
+
         roomId: selectedRoom._id,
         text: newMessage,
       });
@@ -152,6 +182,9 @@ const RoomsPage = ({ userId }) => {
     }
   };
 
+
+
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -159,8 +192,39 @@ const RoomsPage = ({ userId }) => {
     }
   };
 
+
+   // Handle room creation
+    const handleCreateRoom = async (roomData) => {
+      setCreateRoomLoading(true);
+      setCreateRoomError(null);
+      try {
+        const headers = getAuthHeaders();
+        if (!headers) {
+          setCreateRoomError("Authentication required to create a room.");
+          setCreateRoomLoading(false);
+          return;
+        }
+        const res = await axios.post(`${BASE_URL}/api/rooms`, roomData, { headers });
+        setRooms((prev) => [...prev, res.data]); // Add new room to the list
+        setShowCreateRoomModal(false); // Close modal on success
+        alert("Room created successfully!");
+      } catch (err) {
+        console.error("Failed to create room:", err);
+        setCreateRoomError(err.response?.data?.message || "Failed to create room.");
+      } finally {
+        setCreateRoomLoading(false);
+      }
+    };
+  
+    if (!userId) {
+      return <div className="text-center text-red-500 p-4">You are not logged in.</div>;
+    }
+  
+
+
   return (
     <div className="bg-black text-gray-100 font-sans h-screen flex flex-col">
+
       <AnimatePresence>
         {selectedRoom ? (
           <motion.div
@@ -173,11 +237,25 @@ const RoomsPage = ({ userId }) => {
           >
             <header className="sticky top-0 z-10 flex items-center justify-between p-4 bg-black/80 backdrop-blur-md border-b border-gray-800">
               <button onClick={() => setSelectedRoom(null)} className="p-2 -ml-2">
-                <ArrowLeft size={24} />
+                <ArrowLeft size={24} /> 
               </button>
               <div className="text-center">
                 <h2 className="font-bold text-lg">{selectedRoom.name}</h2>
-                <p className="text-xs text-gray-400">24 members, 7 online</p> {/* This data needs to come from backend */}
+                <p className="text-sm text-gray-400">
+                  {selectedRoom.description || 'No description available'}
+                </p>
+                <p className="text-sm text-gray-400">
+                    {selectedRoom.isPrivate ? ' (Private)' : ' (Public)'}
+                  </p>
+                {/* {selectedRoom.isPrivate && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <LinkIcon size={16} />
+                    <span className="text-xs text-gray-500">
+                      {selectedRoom.inviteLink || 'No invite link available'}
+                    </span>
+                  </div>
+                )} */}
+
               </div>
               <button className="p-2 -mr-2">
                 <MoreVertical size={24} />
@@ -223,14 +301,19 @@ const RoomsPage = ({ userId }) => {
           >
             <header className="sticky top-0 z-10 p-4 bg-black/80 backdrop-blur-md border-b border-gray-800">
               <h1 className="text-2xl font-bold text-center">Rooms</h1>
-              <div className="relative mt-4">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search rooms..."
-                  className="w-full bg-gray-900 border border-gray-700 rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
+              <p className="text-sm text-gray-400 text-center">
+                {rooms.length} {rooms.length === 1 ? 'room' : 'rooms'}
+              </p>
+              <p className="text-sm text-gray-400 text-center">
+                Click to join and chat or create a new room.
+              </p>
+
+              <button onClick={() => setShowCreateRoomModal(true)}
+                className="p-2 bg-purple-600 hover:bg-purple-700 rounded-full text-white shadow-lg absolute right-4 top-4"
+                title="Add New Room" >
+                <PlusCircle size={24} />
+              </button>
+
             </header>
 
             <main className="flex-1 overflow-y-auto p-4 pb-20">
@@ -253,11 +336,9 @@ const RoomsPage = ({ userId }) => {
                   <div className="flex-1">
                     <div className="flex justify-between items-baseline">
                       <h3 className="font-semibold">{room.name}</h3>
-                      <p className="text-xs text-gray-500">3:45 PM</p> {/* This timestamp is static, should come from room.lastMessage.createdAt */}
-                    </div>
-                    <p className="text-sm text-gray-400 truncate">
-                      {room.lastMessage?.text || 'No messages yet...'} {/* Access lastMessage.text */}
-                    </p>
+                  </div>
+                    <p className="text-sm text-gray-400">{room.description || 'No description available'}</p>
+                    
                   </div>
                 </motion.div>
               ))}
@@ -266,6 +347,15 @@ const RoomsPage = ({ userId }) => {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Create Room Modal */}
+            <CreateRoomModal
+              isVisible={showCreateRoomModal}
+              onClose={() => setShowCreateRoomModal(false)}
+              onCreateRoom={handleCreateRoom}
+              loading={createRoomLoading}
+              error={createRoomError}
+            />
     </div>
   );
 };

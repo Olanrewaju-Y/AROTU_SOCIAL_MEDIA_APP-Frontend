@@ -11,7 +11,7 @@ const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 const socket = io(BASE_URL, { transports: ['websocket'] });
 
 
-const MessageBubble = ({ msg, userId }) => {
+const MessageBubble = ({ msg, userId, currentUser }) => {
   // Defensive check: If msg or msg.sender is undefined/null, render as a system message.
   if (!msg || !msg.sender) {
     return (
@@ -21,8 +21,15 @@ const MessageBubble = ({ msg, userId }) => {
       </div>
     );
   }
-
   const isCurrentUser = String(msg.sender?._id) === String(userId);
+  
+  // Determine the display name. For the current user, use the full user object from local storage.
+  // For other users, use what's available in the message sender object.
+  const displayName = isCurrentUser
+    ? currentUser?.roomNickname || currentUser?.username || 'You'
+    : msg.sender?.roomNickname || msg.sender?.username || 'Anonymous';
+
+    console.log(`Message from ${displayName}: ${msg.sender?.avatar}`); // Debugging log
 
   return (
     <motion.div
@@ -36,8 +43,10 @@ const MessageBubble = ({ msg, userId }) => {
     >
       {/* Avatar */}
       <img
-        src={msg.sender.avatar || `https://i.pravatar.cc/150?u=${msg.sender._id}`}
-        alt={msg.sender.username || 'User'} // Added fallback for username
+        // src={msg.sender?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.sender.avatar || 'Guest')}&background=random&color=fff`}
+         src={msg.user?.avatar || `https://i.pravatar.cc/150?u=${msg.sender?._id}`}        
+
+        alt={displayName}
         className="w-8 h-8 rounded-full object-cover flex-shrink-0"
       />
 
@@ -50,9 +59,9 @@ const MessageBubble = ({ msg, userId }) => {
               : 'bg-gray-800 rounded-bl-none' // Other user: gray, no bottom-left radius
           }`}
         >
-          {/* Sender Name: Always display the sender's username */}
+          {/* Sender Name: Prioritize roomNickname, fallback to username */}
         <p className={`text-xs text-gray-400 mb-1 px-1 font-bold ${isCurrentUser ? 'text-right' : 'text-left'}`}>
-          {msg.sender.username || 'Anonymous'} {/* Added fallback for username */}
+          {displayName}
         </p>
           <p className="text-sm text-white break-words">{msg.text}</p>
           <p className={`text-xs mt-1 text-right ${isCurrentUser ? 'text-purple-200' : 'text-gray-400'}`}>
@@ -73,6 +82,7 @@ const RoomsPage = ({ userId }) => {
   const [error, setError] = useState(null);
   const [showCreateRoomModal, setShowCreateRoomModal] = useState(false); // New state for modal 
    const [createRoomLoading, setCreateRoomLoading] = useState(false); // Loading state for room creation
+   const [currentUser, setCurrentUser] = useState(null);
    const [createRoomError, setCreateRoomError] = useState(null); // Error state for room creation
  
    const messagesEndRef = useRef(null);
@@ -84,6 +94,17 @@ const RoomsPage = ({ userId }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    try {
+      const userString = localStorage.getItem('user');
+      if (userString) {
+        setCurrentUser(JSON.parse(userString));
+      }
+    } catch (e) {
+      console.error("Failed to parse user from localStorage", e);
+    }
+  }, []);
 
   /**
    * @returns {object|null} The authorization headers object or null if token is not found.
@@ -165,13 +186,11 @@ const RoomsPage = ({ userId }) => {
       );
       const savedMessage = res.data;
 
-      // Manually emit the socket message
-      socket.emit('room-message', {
-        sender: userId,
-        roomId: selectedRoom._id,
-        text: newMessage,
-      });
-
+      // Emit the complete message object from the POST response.
+      // This ensures that receivers get the same data structure,
+      // including the sender's populated roomNickname.
+      // A small backend change is needed to handle this.
+      socket.emit('room-message', savedMessage);
       setMessages((prev) => [...prev, savedMessage]);
       setNewMessage('');
     } catch (err) {
@@ -245,14 +264,14 @@ const RoomsPage = ({ userId }) => {
                 <p className="text-sm text-gray-400">
                     {selectedRoom.isPrivate ? ' (Private)' : ' (Public)'}
                   </p>
-                {selectedRoom.isPrivate && (
+                {/* {selectedRoom.isPrivate && (
                   <div className="flex items-center gap-2 mt-1">
                     <LinkIcon size={16} />
                     <span className="text-xs text-gray-500">
                       {selectedRoom.inviteLink || 'No invite link available'}
                     </span>
                   </div>
-                )}
+                )} */}
 
               </div>
               <button className="p-2 -mr-2">
@@ -264,7 +283,7 @@ const RoomsPage = ({ userId }) => {
               {loading && <p className="text-center text-gray-400">Loading messages...</p>}
               {error && <p className="text-center text-red-500">{error}</p>}
               {!loading && messages.map((msg) => (
-                <MessageBubble key={msg._id || Math.random()} msg={msg} userId={userId} /> // Added fallback key
+                <MessageBubble key={msg._id || Math.random()} msg={msg} userId={userId} currentUser={currentUser} /> // Added fallback key
               ))}
               <div ref={messagesEndRef} />
             </main>
@@ -307,7 +326,7 @@ const RoomsPage = ({ userId }) => {
               </p>
 
               <button onClick={() => setShowCreateRoomModal(true)}
-                className="p-4 bg-purple-600 hover:bg-purple-700 rounded-full text-white shadow-lg absolute right-4 top-4"
+                className="p-2 bg-purple-600 hover:bg-purple-700 rounded-full text-white shadow-lg absolute right-4 top-4"
                 title="Add New Room" >
                 <PlusCircle size={24} />
               </button>

@@ -7,8 +7,6 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
     name: '',
     description: '',
     avatar: '',
-    isPublic: true,
-    password: '',
     isPrivate: false,
     parentRoom: '', // This might be a dropdown of existing rooms or left empty
     type: 'main', // 'main' or 'sub'
@@ -22,31 +20,12 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
       ...prev,
       [id]: type === 'checkbox' ? checked : value,
     }));
-
-    // Logic for isPublic/isPrivate toggle
-    if (id === 'isPublic') {
-      setRoom((prev) => ({
-        ...prev,
-        isPrivate: !checked, // If public is checked, private is unchecked
-        password: checked ? '' : prev.password, // Clear password if public
-      }));
-    } else if (id === 'isPrivate') {
-      setRoom((prev) => ({
-        ...prev,
-        isPublic: !checked, // If private is checked, public is unchecked
-        password: checked ? prev.password : '', // Clear password if not private
-      }));
-    }
   };
 
   const handleSubmit = async () => {
     setFormError(null);
     if (!room.name.trim()) {
       setFormError("Room name is required.");
-      return;
-    }
-    if (room.isPrivate && !room.password.trim()) {
-      setFormError("Password is required for private rooms.");
       return;
     }
     if (room.type === 'sub' && !room.parentRoom) {
@@ -61,8 +40,6 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
         name: '',
         description: '',
         avatar: '',
-        isPublic: true,
-        password: '',
         isPrivate: false,
         parentRoom: '',
         type: 'main',
@@ -135,18 +112,6 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
                 <div className="flex items-center">
                   <input
                     type="checkbox"
-                    id="isPublic"
-                    checked={room.isPublic}
-                    onChange={handleChange}
-                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-600 rounded"
-                  />
-                  <label htmlFor="isPublic" className="ml-2 text-sm text-gray-300 flex items-center">
-                    <Globe size={16} className="mr-1" /> Public
-                  </label>
-                </div>
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
                     id="isPrivate"
                     checked={room.isPrivate}
                     onChange={handleChange}
@@ -157,20 +122,6 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
                   </label>
                 </div>
               </div>
-
-              {room.isPrivate && (
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">Password *</label>
-                  <input
-                    type="password"
-                    id="password"
-                    value={room.password}
-                    onChange={handleChange}
-                    placeholder="Enter password for private room"
-                    className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
-                  />
-                </div>
-              )}
 
               <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-300 mb-1">Room Type</label>

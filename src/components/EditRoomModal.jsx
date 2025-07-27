@@ -14,7 +14,6 @@ const EditRoomModal = ({ isVisible, onClose, room, onUpdateRoom, onDeleteRoom, l
         description: room.description || '',
         avatar: room.avatar || '',
         isPrivate: room.isPrivate || false,  
-        members: room.members || [],      
         parentRoom: room.parentRoom?._id || room.parentRoom || '',
         type: room.type || 'main',
         
@@ -28,9 +27,6 @@ const EditRoomModal = ({ isVisible, onClose, room, onUpdateRoom, onDeleteRoom, l
     const { id, value, type, checked } = e.target;
     setFormData((prev) => {
       const newFormData = { ...prev, [id]: type === 'checkbox' ? checked : value };
-      if (id === 'isPrivate' && !checked) {
-        newFormData.password = ''; // Clear password if room is made public
-      }
       if (id === 'type' && value === 'main') {
         newFormData.parentRoom = ''; // Clear parent if type is changed to main
       }
@@ -42,11 +38,6 @@ const EditRoomModal = ({ isVisible, onClose, room, onUpdateRoom, onDeleteRoom, l
     setFormError(null);
     if (!formData.name.trim()) {
       setFormError("Room name is required.");
-      return;
-    }
-    // If making a public room private, a new password is required.
-    if (formData.isPrivate && !room.isPrivate && !formData.password.trim()) {
-      setFormError("A new password is required to make this room private.");
       return;
     }
     if (formData.type === 'sub' && !formData.parentRoom) {
@@ -61,15 +52,9 @@ const EditRoomModal = ({ isVisible, onClose, room, onUpdateRoom, onDeleteRoom, l
       description: formData.description,
       avatar: formData.avatar,
       isPrivate: formData.isPrivate,
-      members: formData.members,
       parentRoom: formData.parentRoom || null,
       type: formData.type,      
     };
-
-    // Only include the password in the payload if a new one was entered.
-    if (formData.password.trim()) {
-      payload.password = formData.password;
-    }
 
     // The parent component will handle the API call
      await onUpdateRoom(room._id, payload);
@@ -125,12 +110,6 @@ const EditRoomModal = ({ isVisible, onClose, room, onUpdateRoom, onDeleteRoom, l
                 <input type="checkbox" id="isPrivate" checked={formData.isPrivate} onChange={handleChange} className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-600 rounded" />
                 <label htmlFor="isPrivate" className="ml-2 text-sm text-gray-300">Private Room</label>
               </div>
-              {formData.isPrivate && (
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">New Password (optional)</label>
-                  <input type="password" id="password" value={formData.password} onChange={handleChange} placeholder="Leave blank to keep current password" className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition" />
-                </div>
-              )}
               <div>
                 <label htmlFor="type" className="block text-sm font-medium text-gray-300 mb-1">Room Type</label>
                 <select id="type" value={formData.type} onChange={handleChange} className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition">

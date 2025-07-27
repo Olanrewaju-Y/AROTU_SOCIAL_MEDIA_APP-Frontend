@@ -29,8 +29,6 @@ const MessageBubble = ({ msg, userId, currentUser }) => {
     ? currentUser?.roomNickname || currentUser?.username || 'You'
     : msg.sender?.roomNickname || msg.sender?.username || 'Anonymous';
 
-    console.log(`Message from ${displayName}: ${msg.sender?.avatar}`); // Debugging log
-
   return (
     <motion.div
       layout // Enables smooth layout transitions for new messages
@@ -44,7 +42,7 @@ const MessageBubble = ({ msg, userId, currentUser }) => {
       {/* Avatar */}
       <img
         // src={msg.sender?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.sender.avatar || 'Guest')}&background=random&color=fff`}
-         src={msg.user?.avatar || `https://i.pravatar.cc/150?u=${msg.sender?._id}`}        
+         src={msg.sender?.avatar || `https://i.pravatar.cc/150?u=${msg.sender?._id}`}        
 
         alt={displayName}
         className="w-8 h-8 rounded-full object-cover flex-shrink-0"

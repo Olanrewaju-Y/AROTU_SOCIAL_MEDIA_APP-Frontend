@@ -2,8 +2,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Globe, Users, Lock, Link as LinkIcon, PlusCircle } from 'lucide-react';
-
-const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) => {
+const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, allRooms = [] }) => {
   const [room, setRoom] = useState({
     name: '',
     description: '',
@@ -50,6 +49,10 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
       setFormError("Password is required for private rooms.");
       return;
     }
+    if (room.type === 'sub' && !room.parentRoom) {
+      setFormError("A parent room must be selected for a sub-room.");
+      return;
+    }
 
     // Call the onCreateRoom function passed from the parent
     await onCreateRoom(room);
@@ -90,7 +93,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
             >
               <X size={24} />
             </button>
-            <h2 className="text-2xl font-bold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-500">
+            <h2 className="text-2xl font-bold text-center mb-6 text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-purple-500">
               Create New Room
             </h2>
             <div className="space-y-4">
@@ -185,15 +188,22 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error }) =
               {/* Parent Room selection - This would ideally be a dropdown of existing main rooms */}
               {room.type === 'sub' && (
                 <div>
-                  <label htmlFor="parentRoom" className="block text-sm font-medium text-gray-300 mb-1">Parent Room ID (for sub-rooms)</label>
-                  <input
-                    type="text" // Or a select/dropdown populated by main rooms
+                  <label htmlFor="parentRoom" className="block text-sm font-medium text-gray-300 mb-1">Parent Room *</label>
+                  <select
                     id="parentRoom"
                     value={room.parentRoom}
                     onChange={handleChange}
-                    placeholder="Enter Parent Room ID"
                     className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
-                  />
+                  >
+                    <option value="">Select a Parent Room</option>
+                    {allRooms
+                      .filter(r => r.type === 'main') // Only main rooms can be parents
+                      .map((parent) => (
+                      <option key={parent._id} value={parent._id}>
+                        {parent.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 

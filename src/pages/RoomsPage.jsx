@@ -4,6 +4,7 @@ import io from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, MoreVertical, Send, PlusCircle, Link as LinkIcon } from 'lucide-react';
 import MobileNavbar from "../components/Navbar";
+import EditRoomModal from '../components/EditRoomModal'; // Import the new modal
 import CreateRoomModal from '../components/CreateRoomModal'; // Import the new modal
 
 
@@ -82,6 +83,7 @@ const RoomsPage = ({ userId }) => {
    const [createRoomLoading, setCreateRoomLoading] = useState(false); // Loading state for room creation
    const [currentUser, setCurrentUser] = useState(null);
    const [createRoomError, setCreateRoomError] = useState(null); // Error state for room creation
+   const [roomToEdit, setRoomToEdit] = useState(null);
  
    const messagesEndRef = useRef(null);
  
@@ -231,6 +233,123 @@ const RoomsPage = ({ userId }) => {
       }
     };
   
+  const handleUpdateRoom = async (roomId, roomData) => {
+    setCreateRoomLoading(true); // Reuse loading state for simplicity
+    setCreateRoomError(null);
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.put(`${BASE_URL}/api/rooms/${roomId}`, roomData, { headers });
+      setRooms(prev => prev.map(r => (r._id === roomId ? res.data : r)));
+      if (selectedRoom?._id === roomId) {
+        setSelectedRoom(res.data);
+      }
+      setRoomToEdit(null); // Close modal
+    } catch (err) {
+      console.error("Failed to update room:", err);
+      setCreateRoomError(err.response?.data?.message || "Failed to update room.");
+    } finally {
+      setCreateRoomLoading(false);
+    }
+  };
+
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm("Are you sure you want to delete this room and all its messages? This cannot be undone.")) {
+      return;
+    }
+    try {
+      const headers = getAuthHeaders();
+      await axios.delete(`${BASE_URL}/api/rooms/${roomId}`, { headers });
+      setRooms(prev => prev.filter(r => r._id !== roomId && r.parentRoom !== roomId));
+      setRoomToEdit(null); // Close modal
+      if (selectedRoom?._id === roomId) {
+        setSelectedRoom(null);
+      }
+      alert("Room deleted successfully.");
+    } catch (err) {
+      console.error("Failed to delete room:", err);
+      alert(err.response?.data?.message || "Failed to delete room.");
+    }
+  };
+
+    const renderRoomHierarchy = () => {
+      const mainRooms = rooms.filter(r => r.type === 'main');
+      const subRooms = rooms.filter(r => r.type === 'sub');
+      let itemIndex = 0;
+  
+      return mainRooms.map(mainRoom => {
+        const children = subRooms.filter(subRoom => {
+          // Handles both populated and unpopulated parentRoom fields
+          const parentId = subRoom.parentRoom?._id || subRoom.parentRoom;
+          return parentId === mainRoom._id;
+        });
+        const mainRoomIndex = itemIndex++;
+  
+        return (
+          <div key={mainRoom._id} className="mb-2">
+            {/* Render Main Room */}
+            <motion.div
+              onClick={() => handleRoomSelect(mainRoom)}
+              className="flex items-center gap-4 p-3 rounded-lg cursor-pointer transition-colors duration-200 hover:bg-gray-800 group"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: mainRoomIndex * 0.05 }}
+            >
+              <img
+                src={mainRoom.avatar || `https://i.pravatar.cc/150?u=${mainRoom._id}`}
+                alt={mainRoom.name}
+                className="w-12 h-12 rounded-full object-cover"
+              />
+              <div className="flex-1">
+                <h3 className="font-semibold">{mainRoom.name}</h3>
+                <p className="text-sm text-gray-400">{mainRoom.description || 'No description available'}</p>
+              </div>
+              <button onClick={(e) => { e.stopPropagation(); setRoomToEdit(mainRoom); }}
+                className="p-1 rounded-full text-gray-500 hover:bg-gray-700 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Room Settings"
+              >
+                <MoreVertical size={20} />
+              </button>
+            </motion.div>
+  
+            {/* Render Sub Rooms */}
+            {children.length > 0 && (
+              <div className="ml-6 pl-4 border-l-2 border-gray-700/50">
+                {children.map(subRoom => {
+                  const subRoomIndex = itemIndex++;
+                  return (
+                    <motion.div
+                      key={subRoom._id}
+                      onClick={() => handleRoomSelect(subRoom)}
+                      className="flex items-center gap-3 p-2 mt-2 rounded-lg cursor-pointer transition-colors duration-200 hover:bg-gray-800 group"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: subRoomIndex * 0.05 }}
+                    >
+                      <img
+                        src={subRoom.avatar || `https://i.pravatar.cc/150?u=${subRoom._id}`}
+                        alt={subRoom.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{subRoom.name}</h3>
+                        <p className="text-sm text-gray-400">{subRoom.description || 'No description'}</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); setRoomToEdit(subRoom); }}
+                        className="p-1 rounded-full text-gray-500 hover:bg-gray-700 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Room Settings"
+                      >
+                        <MoreVertical size={18} />
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      });
+    };
+
     if (!userId) {
       return <div className="text-center text-red-500 p-4">You are not logged in.</div>;
     }
@@ -334,29 +453,7 @@ const RoomsPage = ({ userId }) => {
             <main className="flex-1 overflow-y-auto p-4 pb-20">
               {loading && <p className="text-center text-gray-400">Loading rooms...</p>}
               {error && <p className="text-center text-red-500">{error}</p>}
-              {rooms.map((room, i) => (
-                <motion.div
-                  key={room._id}
-                  onClick={() => handleRoomSelect(room)}
-                  className="flex items-center gap-4 p-3 mb-2 rounded-lg cursor-pointer transition-colors duration-200 hover:bg-gray-800"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: i * 0.05 }}
-                >
-                  <img
-                    src={room.avatar || `https://i.pravatar.cc/150?u=${room._id}`}
-                    alt={room.name}
-                    className="w-12 h-12 rounded-full object-cover"
-                  />
-                  <div className="flex-1">
-                    <div className="flex justify-between items-baseline">
-                      <h3 className="font-semibold">{room.name}</h3>
-                  </div>
-                    <p className="text-sm text-gray-400">{room.description || 'No description available'}</p>
-                    
-                  </div>
-                </motion.div>
-              ))}
+              {!loading && renderRoomHierarchy()}
             </main>
             <MobileNavbar />
           </motion.div>
@@ -370,6 +467,17 @@ const RoomsPage = ({ userId }) => {
               onCreateRoom={handleCreateRoom}
               loading={createRoomLoading}
               error={createRoomError}
+              allRooms={rooms}
+            />
+
+            <EditRoomModal
+              isVisible={!!roomToEdit}
+              onClose={() => setRoomToEdit(null)}
+              room={roomToEdit}
+              onUpdateRoom={handleUpdateRoom}
+              onDeleteRoom={handleDeleteRoom}
+              loading={createRoomLoading}
+              allRooms={rooms}
             />
     </div>
   );

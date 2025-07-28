@@ -1,7 +1,8 @@
 // src/components/CreateRoomModal.js
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Globe, Users, Lock, Link as LinkIcon, PlusCircle } from 'lucide-react';
+import { X, Lock } from 'lucide-react';
+
 const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, allRooms = [] }) => {
   const [room, setRoom] = useState({
     name: '',
@@ -10,16 +11,34 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
     isPrivate: false,
     parentRoom: '', // This might be a dropdown of existing rooms or left empty
     type: 'main', // 'main' or 'sub'
-    creator: '', // This should be set to the current user's ID or username  
+    creator: '', // This should be set to the current user's ID or username
   });
   const [formError, setFormError] = useState(null);
 
   const handleChange = (e) => {
     const { id, value, type, checked } = e.target;
-    setRoom((prev) => ({
-      ...prev,
-      [id]: type === 'checkbox' ? checked : value,
-    }));
+
+    setRoom((prev) => {
+      let updatedRoom = { ...prev };
+
+      if (id === 'isPrivate') {
+        updatedRoom.isPrivate = checked;
+        // If private, force type to 'main' and clear parentRoom
+        if (checked) {
+          updatedRoom.type = 'main';
+          updatedRoom.parentRoom = '';
+        }
+      } else if (id === 'type') {
+        updatedRoom.type = value;
+        // If type changes to 'main', clear parentRoom
+        if (value === 'main') {
+          updatedRoom.parentRoom = '';
+        }
+      } else {
+        updatedRoom[id] = type === 'checkbox' ? checked : value;
+      }
+      return updatedRoom;
+    });
   };
 
   const handleSubmit = async () => {
@@ -28,6 +47,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
       setFormError("Room name is required.");
       return;
     }
+    // Re-check for sub-room parent selection, now that private rooms are always main
     if (room.type === 'sub' && !room.parentRoom) {
       setFormError("A parent room must be selected for a sub-room.");
       return;
@@ -35,7 +55,8 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
 
     // Call the onCreateRoom function passed from the parent
     await onCreateRoom(room);
-    if (!error) { // Only clear form if no error from API
+    // Only clear form if no error from API and modal is still visible (meaning it wasn't closed by an external error)
+    if (!error && isVisible) {
       setRoom({
         name: '',
         description: '',
@@ -45,7 +66,7 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
         type: 'main',
         creator: '', // Assuming creator is set elsewhere, e.g., from user context
       });
-      onClose();
+      onClose(); // Close modal on success
     }
   };
 
@@ -129,15 +150,18 @@ const CreateRoomModal = ({ isVisible, onClose, onCreateRoom, loading, error, all
                   id="type"
                   value={room.type}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition"
+                  // Disable if room is private
+                  disabled={room.isPrivate}
+                  className={`w-full px-4 py-2 bg-[#1a1a1a] border border-gray-600 rounded-lg focus:ring-cyan-500 focus:border-cyan-500 transition ${room.isPrivate ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <option value="main">Main Room</option>
-                  <option value="sub">Sub Room</option>
+                  {/* Option for sub-room is only available if not private */}
+                  {!room.isPrivate && <option value="sub">Sub Room</option>}
                 </select>
               </div>
 
-              {/* Parent Room selection - This would ideally be a dropdown of existing main rooms */}
-              {room.type === 'sub' && (
+              {/* Parent Room selection - only visible if type is 'sub' and not private */}
+              {room.type === 'sub' && !room.isPrivate && (
                 <div>
                   <label htmlFor="parentRoom" className="block text-sm font-medium text-gray-300 mb-1">Parent Room *</label>
                   <select

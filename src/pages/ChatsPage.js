@@ -17,6 +17,7 @@ const MessageBubble = ({ msg, userId }) => {
 
   if (!msg.sender) {
     // This case might happen for system messages or if sender population failed
+    // or if the optimistic update had missing sender info (though we've improved this)
     return (
       <div className="text-center text-xs text-gray-500 py-2">
         <span>{msg.text}</span>
@@ -63,7 +64,7 @@ function ChatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("allUsers"); // Changed default to 'allUsers' to match the simpler display
+  const [activeTab, setActiveTab] = useState("allUsers"); // Set default to 'allUsers' as per your revert
   const [searchResults, setSearchResults] = useState([]);
 
   const navigate = useNavigate();
@@ -72,13 +73,14 @@ function ChatsPage() {
   const currentUserId = currentUser?._id;
 
   // Emit 'addUser' event to Socket.IO server when component mounts and user is known
+  // This registers the user's current socket ID with their userId on the backend.
   useEffect(() => {
     if (currentUserId && socket.connected) {
       socket.emit('addUser', currentUserId);
       console.log(`Frontend: Emitting 'addUser' for ${currentUserId}`);
     }
 
-    // Optional: Re-emit if socket reconnects
+    // Re-emit if socket reconnects
     const handleReconnect = () => {
       if (currentUserId) {
         socket.emit('addUser', currentUserId);
@@ -90,7 +92,7 @@ function ChatsPage() {
     return () => {
       socket.off('reconnect', handleReconnect);
     };
-  }, [currentUserId, socket.connected]);
+  }, [currentUserId, socket.connected]); // Depend on currentUserId and socket.connected state
 
 
   // Scroll to bottom of messages
@@ -184,8 +186,8 @@ function ChatsPage() {
   const handleUserSelect = async (user) => {
     // If selecting the same user, just scroll to bottom and potentially re-join socket room
     if (selectedUser && selectedUser._id === user._id) {
-        // We can re-emit 'join-private' here to ensure the socket is in the user's room
-        // This is a safety net in case of socket re-connections or tab changes without a full reload.
+        // When user selects a chat, ensure their *current socket* joins a room named after *their own userId*.
+        // This is where the backend will target messages *to this user*.
         socket.emit('join-private', { userId: currentUserId });
         scrollToBottom();
         return;
@@ -197,9 +199,10 @@ function ChatsPage() {
     setError(null);
     const token = localStorage.getItem("token");
 
-    // Join the private room specific to the current user's ID
-    // This allows the server to target this specific client for private messages
+    // CRITICAL: Ensure the current user's socket joins a room named after their own ID.
+    // This is the room where the backend will send 'receive-private-message' events targeted at this user.
     socket.emit('join-private', { userId: currentUserId });
+    console.log(`Frontend: User ${currentUserId} joining private room for their own ID.`);
 
     try {
       const res = await axios.get(`${BASE_URL}/api/messages/private/${user._id}`, {
@@ -221,9 +224,9 @@ function ChatsPage() {
 
     // Optimistic UI update: Display message immediately
     const optimisticMessage = {
-      _id: Date.now(), // Temporary ID
+      _id: `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`, // More unique temporary ID
       sender: { _id: currentUserId, username: currentUser?.username, avatar: currentUser?.avatar },
-      receiver: selectedUser._id, // This is just the ID for optimistic; backend will populate
+      receiver: { _id: selectedUser._id, username: selectedUser?.username, avatar: selectedUser?.avatar }, // Add receiver data for optimistic
       text: newMessage,
       createdAt: new Date().toISOString(),
     };
@@ -233,30 +236,36 @@ function ChatsPage() {
     scrollToBottom();
 
     try {
+      // 1. Send message via REST API
+      // The backend will save this message and return the fully populated object.
       const res = await axios.post(`${BASE_URL}/api/messages/private`, {
-        receiver: selectedUser._id,
+        receiver: selectedUser._id, // Send only the receiver ID
         text: newMessage,
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const savedMessage = res.data; // This 'savedMessage' should now include populated sender/receiver from backend
-      setMessages(prev =>
-        prev.map(msg => (msg._id === optimisticMessage._id ? savedMessage : msg))
-      );
+      const savedMessage = res.data; // This 'savedMessage' will now be fully populated from backend
 
-      // Emit the message details required by the backend socket handler
-      // The backend will handle populating the sender/receiver for broadcast
+      // 2. Update optimistic message with server's confirmed message (if it's the same message)
+      setMessages(prev =>
+        prev.map(msg => (String(msg._id) === String(optimisticMessage._id) ? savedMessage : msg))
+      );
+      console.log("Frontend: Replaced optimistic message with server-saved message:", savedMessage);
+
+      // 3. Emit a simpler event to Socket.IO for real-time delivery
+      // The backend will take these IDs, save the message, POPULATE it, and then broadcast the fully populated message.
       socket.emit('private-message', {
         senderId: currentUserId,
         receiverId: selectedUser._id,
-        text: savedMessage.text // Send the actual saved text
+        text: savedMessage.text // Use text from savedMessage for consistency
       });
+      console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast.");
 
     } catch (err) {
       console.error("Failed to send private message:", err);
       // Revert optimistic update if sending fails
-      setMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
+      setMessages(prev => prev.filter(msg => String(msg._id) !== String(optimisticMessage._id)));
       setError("Couldn't send message. Please try again.");
     }
   };
@@ -266,30 +275,42 @@ function ChatsPage() {
     if (!socket) return;
 
     const handleIncomingMessage = (message) => {
-      // Check if the message is relevant to the currently selected chat
-      // It's relevant if:
-      // 1. You are the selected user's receiver (message.receiver._id === currentUserId) and it's from selectedUser (message.sender._id === selectedUser._id)
-      // 2. You are the sender (message.sender._id === currentUserId) and it's to the selectedUser (message.receiver._id === selectedUser._id)
-      // This is crucial to avoid showing messages for other conversations.
-      if (selectedUser &&
-          (
+        // IMPORTANT: Check if the message is for the *currently active chat*
+        // AND if it's either sent by *you* or to *you* by the selected user.
+        // Also ensure the message structure is as expected (has ._id, .sender._id, .receiver._id).
+        if (!message || !message._id || !message.sender || !message.sender._id || !message.receiver || !message.receiver._id) {
+            console.warn("Received malformed message from socket:", message);
+            return;
+        }
+
+        const isMessageForCurrentChat = selectedUser && (
+            // Message is from the selected user TO the current user
             (String(message.sender._id) === String(selectedUser._id) && String(message.receiver._id) === String(currentUserId)) ||
+            // Message is from the current user TO the selected user (confirmation/sync from backend)
             (String(message.sender._id) === String(currentUserId) && String(message.receiver._id) === String(selectedUser._id))
-          )
-      ) {
-        // Prevent duplicate messages if optimistic update already added it
-        const isOptimisticDuplicate = messages.some(
-            msg => msg._id === message._id || // Check for exact _id (if backend returns temp ID)
-                   (msg.text === message.text &&
-                    msg.sender._id === message.sender._id &&
-                    new Date(msg.createdAt).getTime() === new Date(message.createdAt).getTime())
         );
 
-        if (!isOptimisticDuplicate) {
-            setMessages(prev => [...prev, message]);
-            scrollToBottom();
+        if (isMessageForCurrentChat) {
+            // Prevent duplicate messages if optimistic update already added it
+            // Check by actual _id (which backend provides), or by content/sender/timestamp for new messages
+            const isOptimisticDuplicate = messages.some(
+                msg => String(msg._id) === String(message._id) || // If the backend returned the exact temp ID or real ID quickly
+                       (msg.text === message.text &&
+                        String(msg.sender._id) === String(message.sender._id) &&
+                        Math.abs(new Date(msg.createdAt).getTime() - new Date(message.createdAt).getTime()) < 1000) // Within 1 second
+            );
+
+            if (!isOptimisticDuplicate) {
+                setMessages(prev => [...prev, message]);
+                scrollToBottom();
+                console.log("Frontend: Added real-time message to current chat:", message);
+            } else {
+                console.log("Frontend: Duplicate message received (likely optimistic or already processed), not adding:", message);
+            }
+        } else {
+            console.log("Frontend: Received message not for current chat or irrelevant. Sender:", message.sender._id, "Receiver:", message.receiver._id, "CurrentUser:", currentUserId, "SelectedUser:", selectedUser?._id);
+            // Optional: Handle notifications for messages from other chats (e.g., show a badge on the user list)
         }
-      }
     };
 
     socket.on('receive-private-message', handleIncomingMessage);

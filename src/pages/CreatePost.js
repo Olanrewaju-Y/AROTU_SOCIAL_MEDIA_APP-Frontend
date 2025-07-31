@@ -125,6 +125,7 @@ export default function CreatePostPage({ onClose }) {
               <option value="public">Public</option>
               <option value="friends">Friends</option>
               <option value="followers">Followers</option>
+              <option value="onlyMe">Only Me</option>
             </select>
           </div>
           {error && <p className="text-red-500 text-sm text-center">{error}</p>}

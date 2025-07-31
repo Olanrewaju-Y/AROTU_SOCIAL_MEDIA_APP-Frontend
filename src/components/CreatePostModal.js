@@ -63,6 +63,7 @@ const CreatePostModal = ({ isCreatingPost, setIsCreatingPost, newPostData, handl
                 <option value="public">Public</option>
                 <option value="friends">Friends Only</option>
                 <option value="followers">Followers Only</option>
+                <option value="onlyMe">Only Me</option>
               </select>
               {error && (
                 <p className="text-red-500 text-sm text-center">

@@ -3,10 +3,11 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, MoreVertical, Send, PlusCircle, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import MobileNavbar from "../components/Navbar";
 import EditRoomModal from '../components/EditRoomModal';
 import CreateRoomModal from '../components/CreateRoomModal';
-import RoomManagementModal from '../components/RoomManagementModal'; // Import the new modal
+import RoomManagementModal from '../components/RoomManagementModal';
 
 
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
@@ -85,10 +86,13 @@ const RoomsPage = ({ userId }) => {
   const [createRoomError, setCreateRoomError] = useState(null);
   const [roomToEdit, setRoomToEdit] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showRoomManagementModal, setShowRoomManagementModal] = useState(false); // New state for room management modal
-  const [roomToManage, setRoomToManage] = useState(null); // The room being managed
+  const [showRoomManagementModal, setShowRoomManagementModal] = useState(false);
+  const [roomToManage, setRoomToManage] = useState(null);
+  const [searchedUsersForAdd, setSearchedUsersForAdd] = useState([]);
+  const [roomAccessError, setRoomAccessError] = useState(null);
 
   const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -139,26 +143,50 @@ const RoomsPage = ({ userId }) => {
   }, []);
 
   const handleRoomSelect = async (room) => {
+    setRoomAccessError(null); // Clear any previous access errors
+
     if (selectedRoom?._id !== room._id) {
       socket.emit('join-room', room._id);
     }
-    setSelectedRoom(room);
+    setSelectedRoom(room); // Set selected room immediately for UI responsiveness
+    setMessages([]); // Clear messages while loading new ones
+
     try {
       const token = localStorage.getItem("token");
-      // Fetch messages for the selected room
-      const messagesRes = await axios.get(`${BASE_URL}/api/rooms/${room._id}/messages`, {
+      
+      // Always fetch the full room details to ensure `members` and `admins` are populated
+      const roomDetailsRes = await axios.get(`${BASE_URL}/api/rooms/${room._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const roomDetails = roomDetailsRes.data; // Use the fully populated room object
+
+      // Now, perform the client-side access check with the full details
+      if (roomDetails.isPrivate) {
+        const isMember = roomDetails.members?.some(member => String(member._id) === String(userId));
+        const isAdmin = roomDetails.admins?.some(adminId => String(adminId) === String(userId));
+        const isCreator = String(roomDetails.creator) === String(userId);
+
+        if (!isMember && !isAdmin && !isCreator) {
+          setSelectedRoom(null);
+          setRoomAccessError("You do not have access to this private room.");
+          return; // Stop further execution
+        }
+      }
+
+      // Proceed to fetch messages
+      const messagesRes = await axios.get(`${BASE_URL}/api/rooms/${roomDetails._id}/messages`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessages(messagesRes.data);
 
-      // Fetch detailed room info including members and admins
-      const roomDetailsRes = await axios.get(`${BASE_URL}/api/rooms/${room._id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setSelectedRoom(roomDetailsRes.data); // Update selectedRoom with detailed info
+      // Finally, update the selected room state with the complete details
+      setSelectedRoom(roomDetails);
+
     } catch (err) {
       console.error("Failed to load messages or room details.", err);
-      setError("Failed to load messages or room details.");
+      // If the backend still returns 403, it means the user is genuinely unauthorized.
+      setRoomAccessError(err.response?.status === 403 ? "You do not have permission to access this room." : "Failed to load room. Please try again.");
+      setSelectedRoom(null); // Deselect the room if loading fails
     }
   };
 
@@ -231,11 +259,10 @@ const RoomsPage = ({ userId }) => {
     try {
       const headers = getAuthHeaders();
 
-      // IMPORTANT: Ensure private rooms are always 'main' and have no parent
       const updatedRoomData = { ...roomData };
       if (updatedRoomData.isPrivate) {
         updatedRoomData.type = 'main';
-        updatedRoomData.parentRoom = ''; // Clear parent room for private rooms
+        updatedRoomData.parentRoom = '';
       }
 
       const res = await axios.put(`${BASE_URL}/api/rooms/${roomId}`, updatedRoomData, { headers });
@@ -244,7 +271,7 @@ const RoomsPage = ({ userId }) => {
         setSelectedRoom(res.data);
       }
       setRoomToEdit(null);
-      setShowRoomManagementModal(false); // Close room management modal if open
+      setShowRoomManagementModal(false);
     } catch (err) {
       console.error("Failed to update room:", err);
       setCreateRoomError(err.response?.data?.message || "Failed to update room.");
@@ -262,7 +289,7 @@ const RoomsPage = ({ userId }) => {
       await axios.delete(`${BASE_URL}/api/rooms/${roomId}`, { headers });
       setRooms(prev => prev.filter(r => r._id !== roomId && r.parentRoom !== roomId));
       setRoomToEdit(null);
-      setShowRoomManagementModal(false); // Close room management modal if open
+      setShowRoomManagementModal(false);
       if (selectedRoom?._id === roomId) {
         setSelectedRoom(null);
       }
@@ -273,144 +300,100 @@ const RoomsPage = ({ userId }) => {
     }
   };
 
-  // New: Handle opening the RoomManagementModal
   const handleManageRoom = (room) => {
     setRoomToManage(room);
     setShowRoomManagementModal(true);
   };
 
-  // New: Placeholder for adding user to room
-  const handleAddUserToRoom = async (roomId, userIdToAdd) => {
-    console.log(`Attempting to add user ${userIdToAdd} to room ${roomId}`);
-    // In a real app, you'd make an API call here:
-    // try {
-    //   const headers = getAuthHeaders();
-    //   await axios.post(`${BASE_URL}/api/rooms/${roomId}/members`, { userId: userIdToAdd }, { headers });
-    //   // After successful API call, refetch room details or update state
-    //   const updatedRoomRes = await axios.get(`${BASE_URL}/api/rooms/${roomId}`, { headers });
-    //   setSelectedRoom(updatedRoomRes.data);
-    //   setRoomToManage(updatedRoomRes.data); // Update the room in the management modal
-    //   alert(`User ${userIdToAdd} added to room!`);
-    // } catch (error) {
-    //   console.error("Failed to add user:", error);
-    //   throw new Error(error.response?.data?.message || "Failed to add user.");
-    // }
-
-    // Mock success for demonstration:
-    const userExists = selectedRoom.members.some(m => m._id === userIdToAdd);
-    if (!userExists) {
-        const mockUser = { _id: userIdToAdd, username: `User${userIdToAdd.substring(0, 4)}`, roomNickname: `User ${userIdToAdd.substring(0, 4)}` };
-        setSelectedRoom(prev => ({
-            ...prev,
-            members: [...prev.members, mockUser]
-        }));
-        setRoomToManage(prev => ({
-            ...prev,
-            members: [...prev.members, mockUser]
-        }));
-        alert(`User ${userIdToAdd} added to room! (Mock)`);
-    } else {
-        throw new Error("User already in room (Mock)");
+  const refreshSelectedRoomDetails = async (roomId) => {
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.get(`${BASE_URL}/api/rooms/${roomId}`, { headers });
+      setSelectedRoom(res.data);
+      setRoomToManage(res.data);
+    } catch (err) {
+      console.error("Failed to refresh room details:", err);
+      setError("Failed to refresh room details after modification.");
     }
   };
 
-  // New: Placeholder for removing user from room
+  const handleAddUserToRoom = async (roomId, userIdToAdd) => {
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${BASE_URL}/api/rooms/addUser`, { roomId, userId: userIdToAdd }, { headers });
+      await refreshSelectedRoomDetails(roomId);
+      return true;
+    } catch (error) {
+      console.error("Failed to add user:", error);
+      throw new Error(error.response?.data?.message || "Failed to add user.");
+    }
+  };
+
   const handleRemoveUserFromRoom = async (roomId, userIdToRemove) => {
-    console.log(`Attempting to remove user ${userIdToRemove} from room ${roomId}`);
-    // In a real app, you'd make an API call here:
-    // try {
-    //   const headers = getAuthHeaders();
-    //   await axios.delete(`${BASE_URL}/api/rooms/${roomId}/members/${userIdToRemove}`, { headers });
-    //   const updatedRoomRes = await axios.get(`${BASE_URL}/api/rooms/${roomId}`, { headers });
-    //   setSelectedRoom(updatedRoomRes.data);
-    //   setRoomToManage(updatedRoomRes.data);
-    //   alert(`User ${userIdToRemove} removed from room!`);
-    // } catch (error) {
-    //   console.error("Failed to remove user:", error);
-    //   throw new Error(error.response?.data?.message || "Failed to remove user.");
-    // }
-
-    // Mock success for demonstration:
-    setSelectedRoom(prev => ({
-        ...prev,
-        members: prev.members.filter(m => m._id !== userIdToRemove)
-    }));
-    setRoomToManage(prev => ({
-        ...prev,
-        members: prev.members.filter(m => m._id !== userIdToRemove)
-    }));
-    alert(`User ${userIdToRemove} removed from room! (Mock)`);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${BASE_URL}/api/rooms/removeUser`, { roomId, userId: userIdToRemove }, { headers });
+      await refreshSelectedRoomDetails(roomId);
+      return true;
+    } catch (error) {
+      console.error("Failed to remove user:", error);
+      throw new Error(error.response?.data?.message || "Failed to remove user.");
+    }
   };
 
-  // New: Placeholder for making user admin
   const handleMakeRoomAdmin = async (roomId, userIdToMakeAdmin) => {
-    console.log(`Attempting to make user ${userIdToMakeAdmin} admin in room ${roomId}`);
-    // In a real app, you'd make an API call here:
-    // try {
-    //   const headers = getAuthHeaders();
-    //   await axios.post(`${BASE_URL}/api/rooms/${roomId}/admins`, { userId: userIdToMakeAdmin }, { headers });
-    //   const updatedRoomRes = await axios.get(`${BASE_URL}/api/rooms/${roomId}`, { headers });
-    //   setSelectedRoom(updatedRoomRes.data);
-    //   setRoomToManage(updatedRoomRes.data);
-    //   alert(`User ${userIdToMakeAdmin} is now an admin!`);
-    // } catch (error) {
-    //   console.error("Failed to make admin:", error);
-    //   throw new Error(error.response?.data?.message || "Failed to make admin.");
-    // }
-
-    // Mock success for demonstration:
-    setSelectedRoom(prev => ({
-        ...prev,
-        admins: [...(prev.admins || []), userIdToMakeAdmin]
-    }));
-    setRoomToManage(prev => ({
-        ...prev,
-        admins: [...(prev.admins || []), userIdToMakeAdmin]
-    }));
-    alert(`User ${userIdToMakeAdmin} is now an admin! (Mock)`);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${BASE_URL}/api/rooms/admins/add`, { roomId, userId: userIdToMakeAdmin }, { headers });
+      await refreshSelectedRoomDetails(roomId);
+      return true;
+    } catch (error) {
+      console.error("Failed to make admin:", error);
+      throw new Error(error.response?.data?.message || "Failed to make admin.");
+    }
   };
 
-  // New: Placeholder for removing user admin
   const handleRemoveRoomAdmin = async (roomId, userIdToRemoveAdmin) => {
-    console.log(`Attempting to remove admin status from user ${userIdToRemoveAdmin} in room ${roomId}`);
-    // In a real app, you'd make an API call here:
-    // try {
-    //   const headers = getAuthHeaders();
-    //   await axios.delete(`${BASE_URL}/api/rooms/${roomId}/admins/${userIdToRemoveAdmin}`, { headers });
-    //   const updatedRoomRes = await axios.get(`${BASE_URL}/api/rooms/${roomId}`, { headers });
-    //   setSelectedRoom(updatedRoomRes.data);
-    //   setRoomToManage(updatedRoomRes.data);
-    //   alert(`Admin status removed from ${userIdToRemoveAdmin}!`);
-    // } catch (error) {
-    //   console.error("Failed to remove admin:", error);
-    //   throw new Error(error.response?.data?.message || "Failed to remove admin.");
-    // }
-
-    // Mock success for demonstration:
-    setSelectedRoom(prev => ({
-        ...prev,
-        admins: (prev.admins || []).filter(id => id !== userIdToRemoveAdmin)
-    }));
-    setRoomToManage(prev => ({
-        ...prev,
-        admins: (prev.admins || []).filter(id => id !== userIdToRemoveAdmin)
-    }));
-    alert(`Admin status removed from ${userIdToRemoveAdmin}! (Mock)`);
+    try {
+      const headers = getAuthHeaders();
+      await axios.post(`${BASE_URL}/api/rooms/admins/remove`, { roomId, userId: userIdToRemoveAdmin }, { headers });
+      await refreshSelectedRoomDetails(roomId);
+      return true;
+    } catch (error) {
+      console.error("Failed to remove admin:", error);
+      throw new new Error(error.response?.data?.message || "Failed to remove admin.");
+    }
   };
 
-  // New: Handle user profile click
+  const handleSearchUsersForAdd = async (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setSearchedUsersForAdd([]);
+      return [];
+    }
+    try {
+      const headers = getAuthHeaders();
+      const res = await axios.get(`${BASE_URL}/users/search?query=${encodeURIComponent(searchTerm)}`, { headers });
+
+      const currentMemberIds = new Set(selectedRoom?.members?.map(m => m._id));
+      const filteredUsers = res.data.filter(user => !currentMemberIds.has(user._id));
+      setSearchedUsersForAdd(filteredUsers);
+      return filteredUsers;
+    } catch (error) {
+      console.error("Failed to search users:", error);
+      setSearchedUsersForAdd([]);
+      throw new Error(error.response?.data?.message || "Failed to search users.");
+    }
+  };
+
   const handleViewProfile = (clickedUserId) => {
-    console.log(`Navigating to profile for user ID: ${clickedUserId}`);
-    // In a real application, you would use react-router-dom's useNavigate:
-    // navigate(`/profile/${clickedUserId}`);
-    // Or open a modal:
-    // setShowProfileModal(true);
-    // setProfileUserId(clickedUserId);
-    alert(`Viewing profile for user ID: ${clickedUserId}`); // Placeholder
+    if (!clickedUserId) {
+      console.error("No user ID provided for profile view.");
+      return;
+    }
+    navigate(`/profile/${clickedUserId}`);
   };
 
 
-  // Derived state for rooms to display, considering hierarchy for search
   const roomsToDisplay = useMemo(() => {
     if (!searchTerm) {
       return rooms;
@@ -557,9 +540,14 @@ const RoomsPage = ({ userId }) => {
             </header>
 
             <main className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-              {loading && <p className="text-center text-gray-400">Loading messages...</p>}
-              {error && <p className="text-center text-red-500">{error}</p>}
-              {!loading && messages.map((msg) => (
+              {roomAccessError && (
+                <div className="text-center text-red-500 p-4 rounded-md bg-red-900/20">
+                  {roomAccessError}
+                </div>
+              )}
+              {loading && !roomAccessError && <p className="text-center text-gray-400">Loading messages...</p>}
+              {error && !roomAccessError && <p className="text-center text-red-500">{error}</p>}
+              {!loading && !roomAccessError && messages.map((msg) => (
                 <MessageBubble key={msg._id || Math.random()} msg={msg} userId={userId} currentUser={currentUser} onUserClick={handleViewProfile} />
               ))}
               <div ref={messagesEndRef} />
@@ -622,9 +610,14 @@ const RoomsPage = ({ userId }) => {
             </header>
 
             <main className="flex-1 overflow-y-auto p-4 pb-20">
-              {loading && <p className="text-center text-gray-400">Loading rooms...</p>}
-              {error && <p className="text-center text-red-500">{error}</p>}
-              {!loading && (
+              {roomAccessError && (
+                <div className="text-center text-red-500 p-4 rounded-md bg-red-900/20">
+                  {roomAccessError}
+                </div>
+              )}
+              {loading && !roomAccessError && <p className="text-center text-gray-400">Loading rooms...</p>}
+              {error && !roomAccessError && <p className="text-center text-red-500">{error}</p>}
+              {!loading && !roomAccessError && (
                 <>
                   <h2 className="text-xl font-bold mt-4 mb-2 text-gray-300">Public Rooms</h2>
                   {renderRoomList('public')}
@@ -662,7 +655,6 @@ const RoomsPage = ({ userId }) => {
         allRooms={rooms}
       />
 
-      {/* New Room Management Modal */}
       <RoomManagementModal
         isVisible={showRoomManagementModal}
         onClose={() => setShowRoomManagementModal(false)}
@@ -673,9 +665,11 @@ const RoomsPage = ({ userId }) => {
         onRemoveAdmin={handleRemoveRoomAdmin}
         onEditRoomSettings={(room) => {
             setRoomToEdit(room);
-            // The RoomManagementModal will be closed by its own onClose
+            setShowRoomManagementModal(false);
         }}
         currentUser={currentUser}
+        onSearchUser={handleSearchUsersForAdd}
+        searchedUsers={searchedUsersForAdd}
       />
     </div>
   );

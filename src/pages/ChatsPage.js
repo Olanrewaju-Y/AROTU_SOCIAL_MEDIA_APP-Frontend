@@ -12,9 +12,11 @@ const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 const socket = io(BASE_URL, { transports: ['websocket'], autoConnect: true });
 
 const MessageBubble = ({ msg, userId }) => {
+  // Ensure msg.sender exists before trying to access its properties
   const isCurrentUser = msg?.sender?._id && String(msg.sender._id) === String(userId);
 
   if (!msg.sender) {
+    // This case might happen for system messages or if sender population failed
     return (
       <div className="text-center text-xs text-gray-500 py-2">
         <span>{msg.text}</span>
@@ -33,8 +35,9 @@ const MessageBubble = ({ msg, userId }) => {
       }`}
     >
       <img
-        src={msg.sender.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${msg.sender.username}`}
-        alt={msg.sender.username}
+        // Ensure msg.sender.username exists for the dicebear fallback
+        src={msg.sender.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${msg.sender.username || 'unknown'}`}
+        alt={msg.sender.username || 'User'}
         className="w-8 h-8 rounded-full object-cover flex-shrink-0"
       />
       <div
@@ -60,12 +63,35 @@ function ChatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("friends"); // 'friends' or 'allUsers'
+  const [activeTab, setActiveTab] = useState("allUsers"); // Changed default to 'allUsers' to match the simpler display
+  const [searchResults, setSearchResults] = useState([]);
 
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
   const currentUser = JSON.parse(localStorage.getItem("user"));
   const currentUserId = currentUser?._id;
+
+  // Emit 'addUser' event to Socket.IO server when component mounts and user is known
+  useEffect(() => {
+    if (currentUserId && socket.connected) {
+      socket.emit('addUser', currentUserId);
+      console.log(`Frontend: Emitting 'addUser' for ${currentUserId}`);
+    }
+
+    // Optional: Re-emit if socket reconnects
+    const handleReconnect = () => {
+      if (currentUserId) {
+        socket.emit('addUser', currentUserId);
+        console.log(`Frontend: Socket reconnected, re-emitting 'addUser' for ${currentUserId}`);
+      }
+    };
+    socket.on('reconnect', handleReconnect);
+
+    return () => {
+      socket.off('reconnect', handleReconnect);
+    };
+  }, [currentUserId, socket.connected]);
+
 
   // Scroll to bottom of messages
   const scrollToBottom = useCallback(() => {
@@ -115,7 +141,6 @@ function ChatsPage() {
   }, [navigate, currentUserId]);
 
   // Handle searching for users
-  const [searchResults, setSearchResults] = useState([]); // New state for search results
   useEffect(() => {
     const searchUsers = async () => {
       if (!searchQuery.trim()) {
@@ -147,6 +172,7 @@ function ChatsPage() {
   }, [searchQuery, currentUserId]);
 
   // Determine which list of users to display based on activeTab and searchQuery
+  // This now directly uses allUsers or friends based on the active tab, without recent conversations sorting.
   const usersToDisplay = searchQuery.trim()
     ? searchResults // If there's a search query, always show search results
     : activeTab === "friends"
@@ -156,11 +182,24 @@ function ChatsPage() {
 
   // Handle selecting a user to chat with
   const handleUserSelect = async (user) => {
+    // If selecting the same user, just scroll to bottom and potentially re-join socket room
+    if (selectedUser && selectedUser._id === user._id) {
+        // We can re-emit 'join-private' here to ensure the socket is in the user's room
+        // This is a safety net in case of socket re-connections or tab changes without a full reload.
+        socket.emit('join-private', { userId: currentUserId });
+        scrollToBottom();
+        return;
+    }
+
     setSelectedUser(user);
     setMessages([]);
     setLoading(true);
     setError(null);
     const token = localStorage.getItem("token");
+
+    // Join the private room specific to the current user's ID
+    // This allows the server to target this specific client for private messages
+    socket.emit('join-private', { userId: currentUserId });
 
     try {
       const res = await axios.get(`${BASE_URL}/api/messages/private/${user._id}`, {
@@ -180,10 +219,11 @@ function ChatsPage() {
     if (!newMessage.trim() || !selectedUser) return;
     const token = localStorage.getItem("token");
 
+    // Optimistic UI update: Display message immediately
     const optimisticMessage = {
-      _id: Date.now(),
+      _id: Date.now(), // Temporary ID
       sender: { _id: currentUserId, username: currentUser?.username, avatar: currentUser?.avatar },
-      receiver: selectedUser._id,
+      receiver: selectedUser._id, // This is just the ID for optimistic; backend will populate
       text: newMessage,
       createdAt: new Date().toISOString(),
     };
@@ -200,13 +240,22 @@ function ChatsPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const savedMessage = res.data;
+      const savedMessage = res.data; // This 'savedMessage' should now include populated sender/receiver from backend
       setMessages(prev =>
         prev.map(msg => (msg._id === optimisticMessage._id ? savedMessage : msg))
       );
-      socket.emit('private-message', savedMessage);
+
+      // Emit the message details required by the backend socket handler
+      // The backend will handle populating the sender/receiver for broadcast
+      socket.emit('private-message', {
+        senderId: currentUserId,
+        receiverId: selectedUser._id,
+        text: savedMessage.text // Send the actual saved text
+      });
+
     } catch (err) {
       console.error("Failed to send private message:", err);
+      // Revert optimistic update if sending fails
       setMessages(prev => prev.filter(msg => msg._id !== optimisticMessage._id));
       setError("Couldn't send message. Please try again.");
     }
@@ -217,18 +266,38 @@ function ChatsPage() {
     if (!socket) return;
 
     const handleIncomingMessage = (message) => {
+      // Check if the message is relevant to the currently selected chat
+      // It's relevant if:
+      // 1. You are the selected user's receiver (message.receiver._id === currentUserId) and it's from selectedUser (message.sender._id === selectedUser._id)
+      // 2. You are the sender (message.sender._id === currentUserId) and it's to the selectedUser (message.receiver._id === selectedUser._id)
+      // This is crucial to avoid showing messages for other conversations.
       if (selectedUser &&
-          ((String(message.sender._id) === String(selectedUser._id) && String(message.receiver) === String(currentUserId)) ||
-           (String(message.sender._id) === String(currentUserId) && String(message.receiver) === String(selectedUser._id)))
+          (
+            (String(message.sender._id) === String(selectedUser._id) && String(message.receiver._id) === String(currentUserId)) ||
+            (String(message.sender._id) === String(currentUserId) && String(message.receiver._id) === String(selectedUser._id))
+          )
       ) {
-        setMessages(prev => [...prev, message]);
-        scrollToBottom();
+        // Prevent duplicate messages if optimistic update already added it
+        const isOptimisticDuplicate = messages.some(
+            msg => msg._id === message._id || // Check for exact _id (if backend returns temp ID)
+                   (msg.text === message.text &&
+                    msg.sender._id === message.sender._id &&
+                    new Date(msg.createdAt).getTime() === new Date(message.createdAt).getTime())
+        );
+
+        if (!isOptimisticDuplicate) {
+            setMessages(prev => [...prev, message]);
+            scrollToBottom();
+        }
       }
     };
 
     socket.on('receive-private-message', handleIncomingMessage);
-    return () => socket.off('receive-private-message', handleIncomingMessage);
-  }, [selectedUser, currentUserId, scrollToBottom]);
+
+    return () => {
+        socket.off('receive-private-message', handleIncomingMessage);
+    };
+  }, [selectedUser, currentUserId, scrollToBottom, messages]); // `messages` dependency is important for `isOptimisticDuplicate`
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

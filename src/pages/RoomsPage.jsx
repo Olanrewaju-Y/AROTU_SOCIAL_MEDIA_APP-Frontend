@@ -11,7 +11,7 @@ import RoomManagementModal from '../components/RoomManagementModal';
 
 
 const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
-const socket = io(BASE_URL, { transports: ['websocket'] });
+const socket = io(BASE_URL, { transports: ['websocket'], autoConnect: true });
 
 
 const MessageBubble = ({ msg, userId, currentUser, onUserClick }) => {

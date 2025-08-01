@@ -184,31 +184,25 @@ function ChatsPage() {
 
   // Handle selecting a user to chat with
   const handleUserSelect = async (user) => {
+    setError(null);
     // If selecting the same user, just scroll to bottom and potentially re-join socket room
     if (selectedUser && selectedUser._id === user._id) {
         // When user selects a chat, ensure their *current socket* joins a room named after *their own userId*.
         // This is where the backend will target messages *to this user*.
         socket.emit('join-private', { userId: currentUserId });
-        scrollToBottom();
-        return;
     }
 
     setSelectedUser(user);
     setMessages([]);
-    setLoading(true);
-    setError(null);
-    const token = localStorage.getItem("token");
-
-    // CRITICAL: Ensure the current user's socket joins a room named after their own ID.
-    // This is the room where the backend will send 'receive-private-message' events targeted at this user.
-    socket.emit('join-private', { userId: currentUserId });
-    console.log(`Frontend: User ${currentUserId} joining private room for their own ID.`);
 
     try {
+    const token = localStorage.getItem("token");
+
       const res = await axios.get(`${BASE_URL}/api/messages/private/${user._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setMessages(res.data);
+
     } catch (err) {
       console.error("Failed to fetch private messages:", err);
       setError("Failed to load messages for this user.");
@@ -216,6 +210,52 @@ function ChatsPage() {
       setLoading(false);
     }
   };
+
+  // Get messages for the currently selected user
+  useEffect(() => {
+    if (!selectedUser) return; // No user selected, skip fetching messages
+    const fetchMessages = async () => {
+      setLoading(true);
+      setError(null);
+      const token = localStorage.getItem("token");
+      try {
+        const res = await axios.get(`${BASE_URL}/api/messages/private/${selectedUser._id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setMessages(res.data);
+      } catch (err) {
+        console.error("Failed to fetch private messages:", err);
+        setError("Failed to load messages for this user.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMessages();
+  }, [selectedUser]);
+
+
+   useEffect(() => {
+      if (!socket || !selectedRoom?._id) return;
+
+       const handleIncomingMessage = (message) => {
+        // Check if the message is for the currently selected user
+        if (message && message.receiver && String(message.receiver._id) === String(selectedUser?._id)) {
+          // Prevent duplicates by checking if the message already exists
+          const isDuplicate = messages.some(msg => String(msg._id) === String(message._id));
+          if (!isDuplicate) {
+            setMessages(prev => [...prev, message]);
+            scrollToBottom();
+            console.log("Frontend: Added real-time message to current chat:", message);
+          } else {
+            console.log("Frontend: Duplicate message received, not adding:", message);
+          }
+        }
+      };
+      socket.on('receive-private', handleIncomingMessage);
+      return () => {
+        socket.off('receive-private', handleIncomingMessage);
+      };
+  }, [socket, selectedUser]);
 
   // Handle sending a new message
   const handleSendMessage = async () => {

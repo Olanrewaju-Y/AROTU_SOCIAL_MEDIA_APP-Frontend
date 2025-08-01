@@ -238,7 +238,7 @@ function ChatsPage() {
     try {
       // 1. Send message via REST API
       // The backend will save this message and return the fully populated object.
-      const res = await axios.post(`${BASE_URL}/api/messages/private`, {
+      const res = await axios.post(`${BASE_URL}/api/messages/create-private`, {
         receiver: selectedUser._id, // Send only the receiver ID
         text: newMessage,
       }, {

@@ -11,6 +11,7 @@ const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 // Ensure socket is only initialized once
 const socket = io(BASE_URL, { transports: ['websocket'], autoConnect: true });
 
+// MessageBubble component (no changes needed here)
 const MessageBubble = ({ msg, userId }) => {
   const isCurrentUser = msg?.sender?._id && String(msg.sender._id) === String(userId);
 
@@ -62,6 +63,8 @@ function ChatsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("allUsers");
   const [searchResults, setSearchResults] = useState([]);
+  // --- NEW STATE FOR SENDING ---
+  const [isSending, setIsSending] = useState(false); // Controls send button/input disable
 
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -176,9 +179,6 @@ function ChatsPage() {
     setSelectedUser(user);
     setMessages([]); // Clear messages when a new user is selected
 
-    // IMPORTANT: When a user selects a chat, their *current socket* should join
-    // a room named after *their own userId*. This is how the backend knows
-    // where to target private messages *to this user*.
     if (currentUserId) {
       socket.emit('join-private', { userId: currentUserId });
       console.log(`Frontend: Emitting 'join-private' for ${currentUserId} to receive messages`);
@@ -202,32 +202,25 @@ function ChatsPage() {
 
   // Socket.io for real-time message receiving for private chats
   useEffect(() => {
-    if (!socket || !currentUserId) return; // currentUserId is essential
+    if (!socket || !currentUserId) return;
 
     const handleIncomingPrivateMessage = (message) => {
-      // IMPORTANT: Check if the message is for the *currently active chat*
-      // AND if it's either sent by *you* or to *you* by the selected user.
-      // Also ensure the message structure is as expected (has ._id, .sender._id, .receiver._id).
       if (!message || !message._id || !message.sender || !message.sender._id || !message.receiver || !message.receiver._id) {
         console.warn("Received malformed message from socket:", message);
         return;
       }
 
       const isMessageForCurrentChat = selectedUser && (
-        // Message is from the selected user TO the current user
         (String(message.sender._id) === String(selectedUser._id) && String(message.receiver._id) === String(currentUserId)) ||
-        // Message is from the current user TO the selected user (confirmation/sync from backend)
         (String(message.sender._id) === String(currentUserId) && String(message.receiver._id) === String(selectedUser._id))
       );
 
       if (isMessageForCurrentChat) {
-        // Prevent duplicate messages if optimistic update already added it
         const isDuplicate = messages.some(
-          // Check by actual _id if available, or by content/sender/timestamp for optimistic matches
           msg => String(msg._id) === String(message._id) ||
-                (msg.text === message.text &&
-                 String(msg.sender._id) === String(message.sender._id) &&
-                 Math.abs(new Date(msg.createdAt).getTime() - new Date(message.createdAt).getTime()) < 2000) // Within 2 seconds
+                       (msg.text === message.text &&
+                        String(msg.sender._id) === String(message.sender._id) &&
+                        Math.abs(new Date(msg.createdAt).getTime() - new Date(message.createdAt).getTime()) < 2000)
         );
 
         if (!isDuplicate) {
@@ -236,73 +229,64 @@ function ChatsPage() {
           console.log("Frontend: Added real-time private message to current chat:", message);
         } else {
           console.log("Frontend: Duplicate private message received (likely optimistic or already processed), not adding:", message);
-          // If it's a duplicate and it's an optimistic message that now has a real _id,
-          // you might want to replace it. Your handleSendMessage already does this.
-          // This `else` block primarily catches true duplicates from the socket.
         }
       } else {
         console.log("Frontend: Received private message not for current chat or irrelevant. Sender:", message.sender._id, "Receiver:", message.receiver._id, "CurrentUser:", currentUserId, "SelectedUser:", selectedUser?._id);
-        // Optional: Handle notifications for messages from other chats (e.g., show a badge on the user list)
       }
     };
 
     socket.on('receive-private-message', handleIncomingPrivateMessage);
 
-    // Clean up event listener when component unmounts or dependencies change
     return () => {
       socket.off('receive-private-message', handleIncomingPrivateMessage);
     };
-  }, [selectedUser, currentUserId, scrollToBottom, messages]); // `messages` dependency is important for `isDuplicate`
+  }, [selectedUser, currentUserId, scrollToBottom, messages]);
 
 
   // Handle sending a new message
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedUser || !currentUserId) return;
+    // --- IMPORTANT: Add `isSending` check here ---
+    if (!newMessage.trim() || !selectedUser || !currentUserId || isSending) return;
+    setIsSending(true); // Set sending state to true immediately
+
     const token = localStorage.getItem("token");
 
     // Optimistic UI update: Display message immediately
     const optimisticMessage = {
-      _id: `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`, // Unique temporary ID
+      _id: `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`,
       sender: { _id: currentUserId, username: currentUser?.username, avatar: currentUser?.avatar },
       receiver: { _id: selectedUser._id, username: selectedUser?.username, avatar: selectedUser?.avatar },
       text: newMessage,
       createdAt: new Date().toISOString(),
-      status: 'sending' // Custom status for optimistic message
+      status: 'sending'
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
-    setNewMessage("");
+    setNewMessage(""); // Clear input *before* API call
     scrollToBottom();
 
     try {
-      // 1. Send message via REST API to save it to DB
       const res = await axios.post(`${BASE_URL}/api/messages/create-private`, {
         receiver: selectedUser._id,
-        text: optimisticMessage.text, // Use text from optimistic message
+        text: optimisticMessage.text,
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const savedMessage = res.data; // Backend should return the fully populated saved message
+      const savedMessage = res.data;
 
-      // 2. Update optimistic message with server's confirmed message
       setMessages(prev =>
         prev.map(msg =>
-          (String(msg._id) === String(optimisticMessage._id) || // Match by temp ID
-           (msg.text === savedMessage.text && String(msg.sender._id) === String(savedMessage.sender._id))) // Fallback match
-          ? savedMessage // Replace with the actual saved message from the backend
+          (String(msg._id) === String(optimisticMessage._id) ||
+           (msg.text === savedMessage.text && String(msg.sender._id) === String(savedMessage.sender._id)))
+          ? savedMessage
           : msg
         )
       );
       console.log("Frontend: Replaced optimistic message with server-saved message:", savedMessage);
 
-      // 3. Emit a real-time event via Socket.IO for the receiver
-      // The backend will now take these IDs and broadcast the message.
-      socket.emit('private-message', {
-        senderId: currentUserId,
-        receiverId: selectedUser._id,
-        text: savedMessage.text // Use the confirmed text from the saved message
-      });
+      // Only emit the socket event AFTER the message is successfully saved to the DB
+      socket.emit('private-message', savedMessage); // Pass the fully saved message object
       console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast.");
 
     } catch (err) {
@@ -310,11 +294,15 @@ function ChatsPage() {
       // Revert optimistic update if sending fails
       setMessages(prev => prev.filter(msg => String(msg._id) !== String(optimisticMessage._id)));
       setError("Couldn't send message. Please try again.");
+    } finally {
+      // --- IMPORTANT: Reset sending state in finally block ---
+      setIsSending(false); // Re-enable sending regardless of success/failure
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // --- IMPORTANT: Add `isSending` check here ---
+    if (e.key === 'Enter' && !e.shiftKey && !isSending) {
       e.preventDefault();
       handleSendMessage();
     }
@@ -365,11 +353,14 @@ function ChatsPage() {
                   placeholder="Type a message..."
                   className="flex-1 px-4 py-2 bg-transparent text-white placeholder-gray-500 focus:outline-none"
                   aria-label="Type your message"
+                  // --- IMPORTANT: Disable input based on isSending state ---
+                  disabled={isSending}
                 />
                 <button
                   onClick={handleSendMessage}
                   className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
-                  disabled={!newMessage.trim()}
+                  // --- IMPORTANT: Disable button based on isSending state ---
+                  disabled={!newMessage.trim() || isSending} // Disable if empty or sending
                   aria-label="Send message"
                 >
                   <Send size={20} />
@@ -389,7 +380,6 @@ function ChatsPage() {
             <header className="sticky top-0 z-10 p-4 bg-black/80 backdrop-blur-md border-b border-gray-800">
               <h1 className="text-2xl font-bold text-center text-white">Chats</h1>
 
-              {/* Tabs for Friends / All Users */}
               <div className="flex justify-around bg-gray-900 rounded-lg p-1 mt-4">
                 <button
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -415,7 +405,6 @@ function ChatsPage() {
                 </button>
               </div>
 
-              {/* Search Bar */}
               <div className="relative mt-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={20} />
                 <input

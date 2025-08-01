@@ -63,7 +63,6 @@ function ChatsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("allUsers");
   const [searchResults, setSearchResults] = useState([]);
-  // State to prevent duplicate message sends
   const [isSending, setIsSending] = useState(false);
 
   const navigate = useNavigate();
@@ -207,7 +206,7 @@ function ChatsPage() {
 
     const handleIncomingPrivateMessage = (message) => {
       if (!message || !message._id || !message.sender || !message.sender._id || !message.receiver || !message.receiver._id) {
-        console.warn("Received malformed message from socket:", message);
+        console.warn("Frontend: Received malformed message from socket:", message);
         return;
       }
 
@@ -242,18 +241,17 @@ function ChatsPage() {
     return () => {
       socket.off('receive-private-message', handleIncomingPrivateMessage);
     };
-  }, [selectedUser, currentUserId, scrollToBottom, messages]); // `messages` dependency is important for `isDuplicate`
+  }, [selectedUser, currentUserId, scrollToBottom, messages]);
 
 
   // Handle sending a new message
   const handleSendMessage = async () => {
-    // Prevent sending if input is empty, no user is selected, or a message is already being sent
     if (!newMessage.trim() || !selectedUser || !currentUserId || isSending) {
       if (isSending) console.warn("Frontend: Attempted to send message while one is already in progress.");
       return;
     }
 
-    setIsSending(true); // Disable send button/input immediately
+    setIsSending(true);
 
     const token = localStorage.getItem("token");
 
@@ -285,7 +283,6 @@ function ChatsPage() {
       // 2. Update optimistic message with server's confirmed message
       setMessages(prev =>
         prev.map(msg =>
-          // Match by temp ID or by text/sender for cases where _id might not match immediately
           (String(msg._id) === String(optimisticMessage._id))
           ? savedMessage // Replace with the actual saved message from the backend
           : msg
@@ -294,15 +291,11 @@ function ChatsPage() {
       console.log("Frontend: Replaced optimistic message with server-saved message:", savedMessage);
 
       // 3. Emit a real-time event via Socket.IO for the receiver
-      // Reverted to previously working structure for backend compatibility
-      socket.emit('private-message', {
-        senderId: savedMessage.sender._id, // Ensure these match what backend expects
-        receiverId: savedMessage.receiver._id, // Ensure these match what backend expects
-        text: savedMessage.text, // Use the confirmed text from the saved message
-        _id: savedMessage._id, // Pass the real _id for better handling on recipient's side
-        createdAt: savedMessage.createdAt // Pass for consistent timestamp
-      });
-      console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast.");
+      // --- THIS IS THE CRITICAL FIX ---
+      // Send the full 'savedMessage' object as returned by the backend REST API
+      socket.emit('private-message', savedMessage);
+      console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast with full savedMessage:", savedMessage);
+
 
     } catch (err) {
       console.error("Failed to send private message:", err);
@@ -352,7 +345,6 @@ function ChatsPage() {
               {loading && <p className="text-center text-gray-400">Loading messages...</p>}
               {error && <p className="text-center text-red-500">{error}</p>}
               {!loading && messages.map((msg) => (
-                // Use msg._id for key if available, fallback to random if optimistic
                 <MessageBubble key={msg._id} msg={msg} userId={currentUserId} />
               ))}
               <div ref={messagesEndRef} />
@@ -368,12 +360,12 @@ function ChatsPage() {
                   placeholder="Type a message..."
                   className="flex-1 px-4 py-2 bg-transparent text-white placeholder-gray-500 focus:outline-none"
                   aria-label="Type your message"
-                  disabled={isSending} // Disable input while sending
+                  disabled={isSending}
                 />
                 <button
                   onClick={handleSendMessage}
                   className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
-                  disabled={!newMessage.trim() || isSending} // Disable if empty or sending
+                  disabled={!newMessage.trim() || isSending}
                   aria-label="Send message"
                 >
                   <Send size={20} />

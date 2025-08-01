@@ -11,10 +11,10 @@ const BASE_URL = process.env.REACT_APP_BACKEND_BASE_API_URL;
 // Ensure socket is only initialized once
 const socket = io(BASE_URL, { transports: ['websocket'], autoConnect: true });
 
-// MessageBubble component (no changes needed here)
 const MessageBubble = ({ msg, userId }) => {
   const isCurrentUser = msg?.sender?._id && String(msg.sender._id) === String(userId);
 
+  // Handle system messages or malformed messages gracefully
   if (!msg.sender) {
     return (
       <div className="text-center text-xs text-gray-500 py-2">
@@ -63,8 +63,8 @@ function ChatsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("allUsers");
   const [searchResults, setSearchResults] = useState([]);
-  // --- NEW STATE FOR SENDING ---
-  const [isSending, setIsSending] = useState(false); // Controls send button/input disable
+  // State to prevent duplicate message sends
+  const [isSending, setIsSending] = useState(false);
 
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
@@ -179,6 +179,7 @@ function ChatsPage() {
     setSelectedUser(user);
     setMessages([]); // Clear messages when a new user is selected
 
+    // Ensure the current user's socket joins their private room to receive messages
     if (currentUserId) {
       socket.emit('join-private', { userId: currentUserId });
       console.log(`Frontend: Emitting 'join-private' for ${currentUserId} to receive messages`);
@@ -210,17 +211,17 @@ function ChatsPage() {
         return;
       }
 
+      // Check if the incoming message belongs to the currently active chat
       const isMessageForCurrentChat = selectedUser && (
         (String(message.sender._id) === String(selectedUser._id) && String(message.receiver._id) === String(currentUserId)) ||
         (String(message.sender._id) === String(currentUserId) && String(message.receiver._id) === String(selectedUser._id))
       );
 
       if (isMessageForCurrentChat) {
+        // Prevent duplicate messages if optimistic update already added it or it's a true socket duplicate
         const isDuplicate = messages.some(
-          msg => String(msg._id) === String(message._id) ||
-                       (msg.text === message.text &&
-                        String(msg.sender._id) === String(message.sender._id) &&
-                        Math.abs(new Date(msg.createdAt).getTime() - new Date(message.createdAt).getTime()) < 2000)
+          // Match by actual _id (from server) or by temporary _id (from optimistic update)
+          msg => String(msg._id) === String(message._id)
         );
 
         if (!isDuplicate) {
@@ -228,10 +229,11 @@ function ChatsPage() {
           scrollToBottom();
           console.log("Frontend: Added real-time private message to current chat:", message);
         } else {
-          console.log("Frontend: Duplicate private message received (likely optimistic or already processed), not adding:", message);
+          console.log("Frontend: Duplicate private message received (already in state or optimistic), not adding:", message);
         }
       } else {
         console.log("Frontend: Received private message not for current chat or irrelevant. Sender:", message.sender._id, "Receiver:", message.receiver._id, "CurrentUser:", currentUserId, "SelectedUser:", selectedUser?._id);
+        // Optional: Implement a notification system for messages from other chats
       }
     };
 
@@ -240,25 +242,29 @@ function ChatsPage() {
     return () => {
       socket.off('receive-private-message', handleIncomingPrivateMessage);
     };
-  }, [selectedUser, currentUserId, scrollToBottom, messages]);
+  }, [selectedUser, currentUserId, scrollToBottom, messages]); // `messages` dependency is important for `isDuplicate`
 
 
   // Handle sending a new message
   const handleSendMessage = async () => {
-    // --- IMPORTANT: Add `isSending` check here ---
-    if (!newMessage.trim() || !selectedUser || !currentUserId || isSending) return;
-    setIsSending(true); // Set sending state to true immediately
+    // Prevent sending if input is empty, no user is selected, or a message is already being sent
+    if (!newMessage.trim() || !selectedUser || !currentUserId || isSending) {
+      if (isSending) console.warn("Frontend: Attempted to send message while one is already in progress.");
+      return;
+    }
+
+    setIsSending(true); // Disable send button/input immediately
 
     const token = localStorage.getItem("token");
 
     // Optimistic UI update: Display message immediately
     const optimisticMessage = {
-      _id: `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+      _id: `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`, // Unique temporary ID
       sender: { _id: currentUserId, username: currentUser?.username, avatar: currentUser?.avatar },
       receiver: { _id: selectedUser._id, username: selectedUser?.username, avatar: selectedUser?.avatar },
       text: newMessage,
       createdAt: new Date().toISOString(),
-      status: 'sending'
+      status: 'sending' // Custom status for optimistic message
     };
 
     setMessages(prev => [...prev, optimisticMessage]);
@@ -266,27 +272,36 @@ function ChatsPage() {
     scrollToBottom();
 
     try {
+      // 1. Send message via REST API to save it to DB
       const res = await axios.post(`${BASE_URL}/api/messages/create-private`, {
         receiver: selectedUser._id,
-        text: optimisticMessage.text,
+        text: optimisticMessage.text, // Use text from optimistic message
       }, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const savedMessage = res.data;
+      const savedMessage = res.data; // Backend should return the fully populated saved message
 
+      // 2. Update optimistic message with server's confirmed message
       setMessages(prev =>
         prev.map(msg =>
-          (String(msg._id) === String(optimisticMessage._id) ||
-           (msg.text === savedMessage.text && String(msg.sender._id) === String(savedMessage.sender._id)))
-          ? savedMessage
+          // Match by temp ID or by text/sender for cases where _id might not match immediately
+          (String(msg._id) === String(optimisticMessage._id))
+          ? savedMessage // Replace with the actual saved message from the backend
           : msg
         )
       );
       console.log("Frontend: Replaced optimistic message with server-saved message:", savedMessage);
 
-      // Only emit the socket event AFTER the message is successfully saved to the DB
-      socket.emit('private-message', savedMessage); // Pass the fully saved message object
+      // 3. Emit a real-time event via Socket.IO for the receiver
+      // Reverted to previously working structure for backend compatibility
+      socket.emit('private-message', {
+        senderId: savedMessage.sender._id, // Ensure these match what backend expects
+        receiverId: savedMessage.receiver._id, // Ensure these match what backend expects
+        text: savedMessage.text, // Use the confirmed text from the saved message
+        _id: savedMessage._id, // Pass the real _id for better handling on recipient's side
+        createdAt: savedMessage.createdAt // Pass for consistent timestamp
+      });
       console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast.");
 
     } catch (err) {
@@ -295,15 +310,14 @@ function ChatsPage() {
       setMessages(prev => prev.filter(msg => String(msg._id) !== String(optimisticMessage._id)));
       setError("Couldn't send message. Please try again.");
     } finally {
-      // --- IMPORTANT: Reset sending state in finally block ---
       setIsSending(false); // Re-enable sending regardless of success/failure
     }
   };
 
   const handleKeyPress = (e) => {
-    // --- IMPORTANT: Add `isSending` check here ---
+    // Only send on Enter, not Shift+Enter, and only if not already sending
     if (e.key === 'Enter' && !e.shiftKey && !isSending) {
-      e.preventDefault();
+      e.preventDefault(); // Prevent default form submission
       handleSendMessage();
     }
   };
@@ -338,7 +352,8 @@ function ChatsPage() {
               {loading && <p className="text-center text-gray-400">Loading messages...</p>}
               {error && <p className="text-center text-red-500">{error}</p>}
               {!loading && messages.map((msg) => (
-                <MessageBubble key={msg._id || Math.random()} msg={msg} userId={currentUserId} />
+                // Use msg._id for key if available, fallback to random if optimistic
+                <MessageBubble key={msg._id} msg={msg} userId={currentUserId} />
               ))}
               <div ref={messagesEndRef} />
             </main>
@@ -353,13 +368,11 @@ function ChatsPage() {
                   placeholder="Type a message..."
                   className="flex-1 px-4 py-2 bg-transparent text-white placeholder-gray-500 focus:outline-none"
                   aria-label="Type your message"
-                  // --- IMPORTANT: Disable input based on isSending state ---
-                  disabled={isSending}
+                  disabled={isSending} // Disable input while sending
                 />
                 <button
                   onClick={handleSendMessage}
                   className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
-                  // --- IMPORTANT: Disable button based on isSending state ---
                   disabled={!newMessage.trim() || isSending} // Disable if empty or sending
                   aria-label="Send message"
                 >

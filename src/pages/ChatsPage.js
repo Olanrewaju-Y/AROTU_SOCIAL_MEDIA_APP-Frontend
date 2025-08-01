@@ -54,14 +54,16 @@ const MessageBubble = ({ msg, userId }) => {
 
 function ChatsPage() {
   const [allUsers, setAllUsers] = useState([]);
-  const [friends, setFriends] = useState([]);
+  // Changed state name from 'friends' to 'inConvoUsers'
+  const [inConvoUsers, setInConvoUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("allUsers");
+  // Default active tab could be 'inConvo' if you prefer
+  const [activeTab, setActiveTab] = useState("inConvo"); // Changed default to 'inConvo'
   const [searchResults, setSearchResults] = useState([]);
   const [isSending, setIsSending] = useState(false);
 
@@ -101,7 +103,7 @@ function ChatsPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Fetch initial data: Friends and All Users
+  // Fetch initial data: Users in conversation and All Users
   useEffect(() => {
     const fetchInitialData = async () => {
       setLoading(true);
@@ -119,14 +121,15 @@ function ChatsPage() {
         const usersData = allUsersRes.data.filter(user => user._id !== currentUserId);
         setAllUsers(usersData);
 
-        const friendsRes = await axios.get(`${BASE_URL}/api/users/friends`, {
+        // Fetch users the current user is in conversation with
+        const inConvoRes = await axios.get(`${BASE_URL}/api/users/in-conversation`, { // NEW API CALL
           headers: { Authorization: `Bearer ${token}` },
         });
-        setFriends(friendsRes.data);
+        setInConvoUsers(inConvoRes.data);
 
       } catch (err) {
         console.error("Failed to fetch initial data:", err);
-        setError('Failed to load users and friends.');
+        setError('Failed to load users and conversations.');
       } finally {
         setLoading(false);
       }
@@ -168,8 +171,9 @@ function ChatsPage() {
 
   const usersToDisplay = searchQuery.trim()
     ? searchResults
-    : activeTab === "friends"
-      ? friends
+    // Changed condition to 'inConvo' and state to 'inConvoUsers'
+    : activeTab === "inConvo"
+      ? inConvoUsers
       : allUsers;
 
   // Handle selecting a user to chat with
@@ -291,8 +295,6 @@ function ChatsPage() {
       console.log("Frontend: Replaced optimistic message with server-saved message:", savedMessage);
 
       // 3. Emit a real-time event via Socket.IO for the receiver
-      // --- THIS IS THE CRITICAL FIX ---
-      // Send the full 'savedMessage' object as returned by the backend REST API
       socket.emit('private-message', savedMessage);
       console.log("Frontend: Emitted 'private-message' to socket for real-time broadcast with full savedMessage:", savedMessage);
 
@@ -387,15 +389,16 @@ function ChatsPage() {
 
               <div className="flex justify-around bg-gray-900 rounded-lg p-1 mt-4">
                 <button
+                  // Changed activeTab to 'inConvo' and text to 'In Convo'
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                    activeTab === 'friends' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                    activeTab === 'inConvo' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
                   onClick={() => {
-                    setActiveTab('friends');
+                    setActiveTab('inConvo');
                     setSearchQuery('');
                   }}
                 >
-                  Friends
+                  In Convo
                 </button>
                 <button
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -430,7 +433,7 @@ function ChatsPage() {
               {!loading && !error && (
                 <>
                   <h2 className="text-sm font-semibold text-gray-400 px-3 mb-2">
-                    {searchQuery.trim() ? "Search Results" : (activeTab === 'friends' ? "Your Friends" : "All Available Users")}
+                    {searchQuery.trim() ? "Search Results" : (activeTab === 'inConvo' ? "Your Conversations" : "All Available Users")}
                   </h2>
                   {usersToDisplay.length > 0 ? usersToDisplay.map((user, i) => (
                     <motion.div
@@ -449,18 +452,20 @@ function ChatsPage() {
                       <div className="flex-1">
                         <p className="font-semibold text-white">{user.username}</p>
                         <p className="text-xs text-gray-400 truncate">
-                          {user.roomNickname && `Nickname: ${user.roomNickname}`}
-                          {user.phone && (user.roomNickname ? " | " : "") + `Phone: ${user.phone}`}
-                          {user.location && ((user.roomNickname || user.phone) ? " | " : "") + `Location: ${user.location}`}
-                          {!user.roomNickname && !user.phone && !user.location && (user.status || 'Available')}
+                          {user.location ? `- ${user.location}` : ''}
                         </p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {user.status || 'Available'}
+                        </p>
+
                       </div>
                     </motion.div>
                   )) : (
                     <p className="text-center text-gray-500 pt-4">
                       {searchQuery.trim()
                         ? "No matching users found."
-                        : (activeTab === 'friends' ? "You have no friends yet." : "No users to display.")
+                        // Changed empty message for 'inConvo' tab
+                        : (activeTab === 'inConvo' ? "You have no active conversations yet." : "No users to display.")
                       }
                     </p>
                   )}

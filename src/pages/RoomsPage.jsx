@@ -390,7 +390,7 @@ const RoomsPage = ({ userId }) => {
       console.error("No user ID provided for profile view.");
       return;
     }
-    navigate(`/profile/${clickedUserId}`);
+    navigate(`/users/${clickedUserId}`);
   };
 
 

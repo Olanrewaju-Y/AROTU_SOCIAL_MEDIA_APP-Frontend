@@ -396,6 +396,9 @@ function ChatsPage() {
                   onClick={() => {
                     setActiveTab('inConvo');
                     setSearchQuery('');
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    reloadMessages();
+                    
                   }}
                 >
                   In Convo

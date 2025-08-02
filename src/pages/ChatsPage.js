@@ -122,7 +122,7 @@ function ChatsPage() {
         setAllUsers(usersData);
 
         // Fetch users the current user is in conversation with
-        const inConvoRes = await axios.get(`${BASE_URL}/api/users/in-conversation`, { // NEW API CALL
+        const inConvoRes = await axios.get(`${BASE_URL}/api/messages/in-conversation`, { // NEW API CALL
           headers: { Authorization: `Bearer ${token}` },
         });
         setInConvoUsers(inConvoRes.data);
@@ -409,7 +409,7 @@ function ChatsPage() {
                     setSearchQuery('');
                   }}
                 >
-                  All Users
+                  Everyone
                 </button>
               </div>
 
@@ -419,7 +419,7 @@ function ChatsPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by username, nickname, phone, or location..."
+                  placeholder="Search username, nickname, phone, or location..."
                   className="w-full bg-gray-900 border border-gray-700 rounded-full py-2 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   aria-label="Search users"
                 />
@@ -433,7 +433,7 @@ function ChatsPage() {
               {!loading && !error && (
                 <>
                   <h2 className="text-sm font-semibold text-gray-400 px-3 mb-2">
-                    {searchQuery.trim() ? "Search Results" : (activeTab === 'inConvo' ? "Your Conversations" : "All Available Users")}
+                    {searchQuery.trim() ? "Search Results" : (activeTab === 'inConvo' ? "Your Conversations" : "Everyone")}
                   </h2>
                   {usersToDisplay.length > 0 ? usersToDisplay.map((user, i) => (
                     <motion.div

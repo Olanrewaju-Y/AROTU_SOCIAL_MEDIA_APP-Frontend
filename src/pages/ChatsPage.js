@@ -29,15 +29,12 @@ const MessageBubble = ({ msg, userId }) => {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className={`flex items-end gap-2 max-w-[80%] ${
-        isCurrentUser ? 'self-end flex-row-reverse' : 'self-start'
+      // Removed flex items-end/start and gap-2 as avatar is gone
+      className={`flex max-w-[80%] ${
+        isCurrentUser ? 'self-end justify-end' : 'self-start'
       }`}
     >
-      <img
-        src={msg.sender.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${msg.sender.username || 'unknown'}`}
-        alt={msg.sender.username || 'User'}
-        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-      />
+      {/* Avatar removed from here */}
       <div
         className={`p-3 rounded-2xl ${
           isCurrentUser ? 'bg-purple-600 rounded-br-none' : 'bg-gray-800 rounded-bl-none'
@@ -54,7 +51,6 @@ const MessageBubble = ({ msg, userId }) => {
 
 function ChatsPage() {
   const [allUsers, setAllUsers] = useState([]);
-  // Changed state name from 'friends' to 'inConvoUsers'
   const [inConvoUsers, setInConvoUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -62,8 +58,7 @@ function ChatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  // Default active tab could be 'inConvo' if you prefer
-  const [activeTab, setActiveTab] = useState("inConvo"); // Changed default to 'inConvo'
+  const [activeTab, setActiveTab] = useState("inConvo");
   const [searchResults, setSearchResults] = useState([]);
   const [isSending, setIsSending] = useState(false);
 
@@ -122,7 +117,7 @@ function ChatsPage() {
         setAllUsers(usersData);
 
         // Fetch users the current user is in conversation with
-        const inConvoRes = await axios.get(`${BASE_URL}/api/messages/in-conversation`, { // NEW API CALL
+        const inConvoRes = await axios.get(`${BASE_URL}/api/messages/in-conversation`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setInConvoUsers(inConvoRes.data);
@@ -171,7 +166,6 @@ function ChatsPage() {
 
   const usersToDisplay = searchQuery.trim()
     ? searchResults
-    // Changed condition to 'inConvo' and state to 'inConvoUsers'
     : activeTab === "inConvo"
       ? inConvoUsers
       : allUsers;
@@ -334,10 +328,21 @@ function ChatsPage() {
               <button onClick={() => setSelectedUser(null)} className="p-2 -ml-2 text-gray-300 hover:text-white transition-colors">
                 <ArrowLeft size={24} />
               </button>
-              <div className="text-center">
-                <h2 className="font-bold text-lg text-white">{selectedUser.username}</h2>
-                <p className="text-xs text-gray-400">{selectedUser.status || 'Available'}</p>
-              </div>
+              {/* Added avatar to header and made it clickable */}
+              <button
+                onClick={() => navigate(`/users/${selectedUser._id}`)} // Navigate to user profile
+                className="flex items-center gap-3 p-2 rounded-full hover:bg-gray-800 transition-colors cursor-pointer"
+              >
+                <img
+                  src={selectedUser.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${selectedUser.username}`}
+                  alt={selectedUser.username}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+                <div className="text-left">
+                  <h2 className="font-bold text-lg text-white">{selectedUser.username}</h2>
+                  <p className="text-xs text-gray-400">{selectedUser.status || 'Available'}</p>
+                </div>
+              </button>
               <button className="p-2 -mr-2 text-gray-300 hover:text-white transition-colors">
                 <MoreVertical size={24} />
               </button>
@@ -389,7 +394,6 @@ function ChatsPage() {
 
               <div className="flex justify-around bg-gray-900 rounded-lg p-1 mt-4">
                 <button
-                  // Changed activeTab to 'inConvo' and text to 'In Convo'
                   className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
                     activeTab === 'inConvo' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
@@ -397,8 +401,6 @@ function ChatsPage() {
                     setActiveTab('inConvo');
                     setSearchQuery('');
                     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                    reloadMessages();
-                    
                   }}
                 >
                   In Convo
@@ -467,7 +469,6 @@ function ChatsPage() {
                     <p className="text-center text-gray-500 pt-4">
                       {searchQuery.trim()
                         ? "No matching users found."
-                        // Changed empty message for 'inConvo' tab
                         : (activeTab === 'inConvo' ? "You have no active conversations yet." : "No users to display.")
                       }
                     </p>
